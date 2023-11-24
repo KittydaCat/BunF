@@ -1,8 +1,8 @@
-use crate::BunFError::TypeMismatch;
-// use crate::Type as T;
-// use crate::EmptyType as ET;
+mod bf;
 
-#[derive(Debug, Clone)]
+use crate::BunFError::TypeMismatch;
+
+#[derive(Debug, Clone, PartialEq)]
 
 pub enum Type{
     U32(u32),
@@ -49,7 +49,19 @@ impl From<String> for Type {
     }
 }
 
-#[derive(Debug, Clone)]
+impl Into<Vec<u32>> for Type{
+    fn into(self) -> Vec<u32> {
+        match self{
+            Type::U32(x) => {vec!(x)}
+            Type::I32(x) => {vec!(x.is_negative() as u32, x as u32)}
+            Type::Bool(x) => {vec!(x as u32)}
+            Type::Char(x) => {vec!(x as u32)}
+            Type::String(x) => {x.iter().map(|char| *char as u32).collect()}
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum EmptyType{
     U32,
     I32,
@@ -72,12 +84,21 @@ impl From<Type> for EmptyType{
 
 #[derive(Debug, Clone)]
 pub enum BunFError{
-    TypeMismatch(Vec<Option<EmptyType>>, Vec<Option<EmptyType>>), // expected ... found ...
+    TypeMismatch(Vec<Option<EmptyType>>, Vec<Option<Type>>), // expected ... found ...
 }
 
 pub struct BunF{
     pub array: Vec<Type>,
     pub output: String,
+    // TODO 1st array slot will not be used b/c bunf assumes it is full
+    // TODO: Add BF code labeling?
+    // TODO: Inputting values
+}
+
+impl Into<Vec<u32>> for BunF{
+    fn into(self) -> Vec<u32>{
+        self.array.into_iter().map(|x| <Type as Into<Vec<u32>>>::into(x)).flatten().collect()
+    }
 }
 
 impl BunF{
@@ -86,9 +107,36 @@ impl BunF{
         Self{array: vec![], output: String::new()}
     }
 
+    pub fn run(&self) -> Result<Vec<u32>, bf::BFError>{
+        self.run_io(&mut || {unimplemented!()}, &mut |_| {unimplemented!()})
+    }
+
+    pub fn run_io(&self, input: &mut dyn FnMut() -> Result<char, bf::BFError>,
+                  output: &mut dyn FnMut(char) -> Result<(), bf::BFError>) -> Result<Vec<u32>, bf::BFError>{
+
+        let mut array = Vec::new();
+
+        bf::run_bf(&mut array, &mut 0, &self.output, input, output, &mut 0)?;
+
+        array.remove(0);
+
+        Ok(array)
+    }
+
+    pub fn test_run(self) -> Result<bool, bf::BFError>{
+
+        let mut array = self.run()?;
+
+        let expected: Vec<u32> = self.into();
+
+        array.truncate(expected.len());
+
+        Ok(array == expected)
+    }
+
     pub fn push(&mut self, item: Type){
 
-        self.output.push_str(&*match &item { // TODO: Add BF code labeling?
+        self.output.push_str(&*match &item { 
 
             Type::U32(n) => {format!(">{}", "+".repeat(*n as usize))}
 
@@ -117,43 +165,67 @@ impl BunF{
         self.array.push(item);
     }
 
-    pub fn pop(&mut self) -> Result<Type, BunFError>{
+    pub fn pop(&mut self) -> Result<(), BunFError>{
 
-        self.output.push_str(&match self.array.last().ok_or(TypeMismatch(vec!(None),vec!(None)))?{
+        self.output.push_str(match self.array.pop().ok_or(TypeMismatch(vec!(None),vec!(None)))?{
 
-            Type::U32(_) | Type::Bool(_) | Type::Char(_) => {String::from("[-]<")}
-            Type::I32(_) => {String::from("[-]<[-]<")}
-            Type::String(x) => {"[-]<".repeat(x.len())}
+            Type::U32(_) | Type::Bool(_) | Type::Char(_) => {"[-]<"}
+            Type::I32(_) => {"[-]<[-]<"}
+            Type::String(_) => {"[-]<<<[[-]<<]<"}
         });
 
-        self.array.pop().ok_or(TypeMismatch(vec!(None),vec!(None)))
+        Ok(())
+
+        // self.array.pop().ok_or(TypeMismatch(vec!(None),vec!(None)))
     }
 
     pub fn add_u32(&mut self) -> Result<(),BunFError>{
 
-        match &self.array[..] {
-            [.., Type::U32(x), Type::U32(y)] => {
+        match (self.array.pop(), self.array.pop()) {
+            (Some(Type::U32(x)), Some(Type::U32(y))) => {
 
-                let (x, y) = (x.clone(), y.clone());
+                let sum = x + y;
 
                 self.output.push_str("[-<+>]<");
 
-                self.array.pop();
-                *self.array.last_mut().expect("Array should have at least two items") = Type::U32(x+y);
+                self.array.push(Type::U32(sum));
                 Ok(())
             },
-            [.., x, y] => {
+            (x, y) => {
                 Err(TypeMismatch(vec!(Some(EmptyType::U32), Some(EmptyType::U32)),
-                                 vec!(Some(EmptyType::from(x.clone())), Some(EmptyType::from(y.clone())))))
+                                 vec!(x, y)))
             }
-            [x] => {
-                Err(TypeMismatch(vec!(Some(EmptyType::U32), Some(EmptyType::U32)),
-                                 vec!(Some(EmptyType::from(x.clone())), None)))
-            }
-            [] => {
-                Err(TypeMismatch(vec!(Some(EmptyType::U32), Some(EmptyType::U32)),
-                                 vec!(None, None)))
-            }
+        }
+    }
+
+    pub fn add_i32(&mut self) -> Result<(), BunFError> {
+
+        match (self.array.pop(), self.array.pop()) {
+            (Some(Type::I32(x)), Some(Type::I32(y))) => {
+
+                todo!();
+
+                Ok(())
+            },
+
+            (x, y) => {
+                Err(TypeMismatch(vec!(Some(EmptyType::I32), Some(EmptyType::I32)),
+                                 vec!(x, y)))}
+        }
+
+    }
+
+    pub fn or(&mut self) -> Result<(), BunFError>{
+
+        match (self.array.get(self.array.len()-1), self.array.get(self.array.len()-2)) {
+
+            (Some(Type::Bool(x)), Some(Type::Bool(y))) => {
+                todo!()
+            },
+            (x, y) => {
+                Err(TypeMismatch(vec!(Some(EmptyType::Bool), Some(EmptyType::Bool)),
+                                 vec!(x.cloned(), y.cloned())))}
+
         }
     }
 }
@@ -163,7 +235,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn u32_adding() {
+
+        let mut x = BunF::new();
+
+        x.push(Type::U32(1));
+
+        x.push(Type::U32(2));
+
+        x.add_u32().unwrap();
+
+        assert!(x.test_run().unwrap())
+    }
+
+    #[test]
+    fn matching() {
+
+
 
     }
 }
