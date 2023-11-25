@@ -1,9 +1,49 @@
 mod bf;
 
-use crate::BunFError::TypeMismatch;
+// pub fn and(&mut self) -> Result<(), BunFError>{
+//     match (self.array.pop(), self.array.pop()) {
+//         (Some(Type::Bool(x)), Some(Type::Bool(y))) => {
+//             self.output.push_str("[-<+>]<[->]<");
+//             self.array.push(Type::Bool(x && y));
+//             Ok(())
+//         },
+//         (x, y) => {
+//             // Err(TypesMismatch([EmptyType::Bool, EmptyType::Bool], [x, y]))
+//             type_error!(Bool, Bool, x, y)
+//         }
+//     }
+// }
+
+macro_rules! bf_func_pop {
+    ($name:ident, $($type:ident($var:ident)),+, $code:block) => {
+        pub fn $name(&mut self) -> Result<(), BunFError>{
+            match ($(discard!($var, self.array.pop()),)*){
+                ($(Some(Type::$type($var)),)*) => {$code Ok(())},
+                ($($var,)*) => type_error!($($type,)* $($var,)*)
+            }
+        }
+    };
+}
+
+macro_rules! discard {
+  ($token:tt, $v:expr) => { $v }
+}
+macro_rules! type_error {
+    ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident) => {
+        Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
+    };
+    ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident,) => {
+        Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
+    };
+    ($ex1:ident, $f1:ident) => {
+        Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
+    };
+    ($ex1:ident, $f1:ident,) => {
+        Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
+    };
+}
 
 #[derive(Debug, Clone, PartialEq)]
-
 pub enum Type{
     U32(u32),
     I32(i32),
@@ -68,6 +108,7 @@ pub enum EmptyType{
     Bool,
     Char,
     String,
+    Any,
 }
 
 impl From<Type> for EmptyType{
@@ -84,7 +125,8 @@ impl From<Type> for EmptyType{
 
 #[derive(Debug, Clone)]
 pub enum BunFError{
-    TypeMismatch(Vec<Option<EmptyType>>, Vec<Option<Type>>), // expected ... found ...
+    TypeMismatch([EmptyType; 1], [Option<Type>; 1]),
+    TypesMismatch([EmptyType; 2], [Option<Type>; 2]),// expected ... found ...
 }
 
 pub struct BunF{
@@ -93,6 +135,8 @@ pub struct BunF{
     // TODO 1st array slot will not be used b/c bunf assumes it is full
     // TODO: Add BF code labeling?
     // TODO: Inputting values
+    // TODO: Decide if Strings should be backwards or forwards
+    // TODO: If a string is indexed correctly we dont have to store the length
 }
 
 impl Into<Vec<u32>> for BunF{
@@ -143,7 +187,7 @@ impl BunF{
             Type::I32(x) => {
                 let mut output = String::from(">");
 
-                if x.is_negative(){output.push_str("+")} // TODO: Think if good decision
+                if x.is_negative(){output.push_str("+")}
                 else{output.push_str("")};
 
                 output.push_str(&*format!(">{}", "+".repeat(x.abs() as usize)));
@@ -156,9 +200,11 @@ impl BunF{
 
             // ahhhhh pls work
             Type::String(str) => {
-                format!(">{}>{}",
+                format!(">{}>>{}",
                         str.iter().map(|char|format!(">>{}", "+".repeat(*char as usize))).collect::<String>(),
                         "+".repeat(str.len())
+                    /*Skips two cells then adds a char every other cell
+                    ending the string with two empty cells then the lenth?*/
                 )}
         });
 
@@ -167,11 +213,13 @@ impl BunF{
 
     pub fn pop(&mut self) -> Result<(), BunFError>{
 
-        self.output.push_str(match self.array.pop().ok_or(TypeMismatch(vec!(None),vec!(None)))?{
+        self.output.push_str(match self.array.pop().ok_or(BunFError::TypeMismatch([EmptyType::Any],[None]))?{
 
             Type::U32(_) | Type::Bool(_) | Type::Char(_) => {"[-]<"}
             Type::I32(_) => {"[-]<[-]<"}
+
             Type::String(_) => {"[-]<<<[[-]<<]<"}
+            /*Removes the length then jumps the gap and deletes the string*/
         });
 
         Ok(())
@@ -179,7 +227,7 @@ impl BunF{
         // self.array.pop().ok_or(TypeMismatch(vec!(None),vec!(None)))
     }
 
-    pub fn add_u32(&mut self) -> Result<(),BunFError>{
+    pub fn add_u32(&mut self) -> Result<(), BunFError>{
 
         match (self.array.pop(), self.array.pop()) {
             (Some(Type::U32(x)), Some(Type::U32(y))) => {
@@ -188,12 +236,12 @@ impl BunF{
 
                 self.output.push_str("[-<+>]<");
 
+
                 self.array.push(Type::U32(sum));
                 Ok(())
             },
             (x, y) => {
-                Err(TypeMismatch(vec!(Some(EmptyType::U32), Some(EmptyType::U32)),
-                                 vec!(x, y)))
+                type_error!(U32, U32, x, y)// ([EmptyType::U32, EmptyType::U32], [x, y]))
             }
         }
     }
@@ -209,25 +257,44 @@ impl BunF{
             },
 
             (x, y) => {
-                Err(TypeMismatch(vec!(Some(EmptyType::I32), Some(EmptyType::I32)),
-                                 vec!(x, y)))}
+                // Err(TypesMismatch([EmptyType::I32, EmptyType::I32], [x, y]))}
+                type_error!(I32, I32, x, y)
+            }
         }
 
     }
 
-    pub fn or(&mut self) -> Result<(), BunFError>{
+    bf_func_pop!{add_i32,
+        I32(x), I32(y), {
+            panic!()
+        }
+    }
 
-        match (self.array.get(self.array.len()-1), self.array.get(self.array.len()-2)) {
+    pub fn and(&mut self) -> Result<(), BunFError>{
+
+        match (self.array.pop(), self.array.pop()) {
 
             (Some(Type::Bool(x)), Some(Type::Bool(y))) => {
-                todo!()
+
+                self.output.push_str("[-<+>]<[->]<");
+                /* Add the two values giving us |(0, 1, 2)|0|
+                then if the result is positive subtract one */
+
+                self.array.push(Type::Bool(x && y));
+
+                Ok(())
             },
             (x, y) => {
-                Err(TypeMismatch(vec!(Some(EmptyType::Bool), Some(EmptyType::Bool)),
-                                 vec!(x.cloned(), y.cloned())))}
+                // Err(TypesMismatch([EmptyType::Bool, EmptyType::Bool], [x, y]))
+                type_error!(Bool, Bool, x, y)
+            }
 
         }
     }
+    bf_func_pop! {or, Bool(x), Bool(y), {
+        self.output.push_str("[-<+>][[-]+]")
+        self.array.push(Type::Bool(x|y))
+    }}
 }
 
 #[cfg(test)]
@@ -249,7 +316,13 @@ mod tests {
     }
 
     #[test]
-    fn matching() {
+    fn or() {
+
+        let mut x = BunF::new();
+
+        x.push(Type::from(true));
+
+        x.push(Type::from(false));
 
 
 
