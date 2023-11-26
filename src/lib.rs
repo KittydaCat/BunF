@@ -1,23 +1,11 @@
 mod bf;
 
-// pub fn and(&mut self) -> Result<(), BunFError>{
-//     match (self.array.pop(), self.array.pop()) {
-//         (Some(Type::Bool(x)), Some(Type::Bool(y))) => {
-//             self.output.push_str("[-<+>]<[->]<");
-//             self.array.push(Type::Bool(x && y));
-//             Ok(())
-//         },
-//         (x, y) => {
-//             // Err(TypesMismatch([EmptyType::Bool, EmptyType::Bool], [x, y]))
-//             type_error!(Bool, Bool, x, y)
-//         }
-//     }
-// }
+// https://minond.xyz/brainfuck/ was used for testing code when it broke
 
 macro_rules! bf_func_pop {
-    ($name:ident, $($type:ident($var:ident)),+, $code:block) => {
-        pub fn $name(&mut self) -> Result<(), BunFError>{
-            match ($(discard!($var, self.array.pop()),)*){
+    ($self: ident, $name:ident, $($type:ident($var:ident)),+, $code:block) => {
+        pub fn $name(&mut $self) -> Result<(), BunFError>{
+            match ($(discard!($var, $self.array.pop()),)*){
                 ($(Some(Type::$type($var)),)*) => {$code Ok(())},
                 ($($var,)*) => type_error!($($type,)* $($var,)*)
             }
@@ -29,18 +17,18 @@ macro_rules! discard {
   ($token:tt, $v:expr) => { $v }
 }
 macro_rules! type_error {
-    ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident) => {
+    ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident $(,)?) => {
         Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
     };
-    ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident,) => {
-        Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
-    };
-    ($ex1:ident, $f1:ident) => {
+    // ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident,) => {
+    //     Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
+    // };
+    ($ex1:ident, $f1:ident $(,)?) => {
         Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
     };
-    ($ex1:ident, $f1:ident,) => {
-        Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
-    };
+    // ($ex1:ident, $f1:ident,) => {
+    //     Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
+    // };
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -162,6 +150,8 @@ impl BunF{
 
         bf::run_bf(&mut array, &mut 0, &self.output, input, output, &mut 0)?;
 
+        // the first value is assumed to be filled and skipped
+
         array.remove(0);
 
         Ok(array)
@@ -171,7 +161,13 @@ impl BunF{
 
         let mut array = self.run()?;
 
+        dbg!(&self.output);
+
+        dbg!(&array);
+
         let expected: Vec<u32> = self.into();
+
+        dbg!(&expected);
 
         array.truncate(expected.len());
 
@@ -246,85 +242,119 @@ impl BunF{
         }
     }
 
-    pub fn add_i32(&mut self) -> Result<(), BunFError> {
 
-        match (self.array.pop(), self.array.pop()) {
-            (Some(Type::I32(x)), Some(Type::I32(y))) => {
 
-                todo!();
-
-                Ok(())
-            },
-
-            (x, y) => {
-                // Err(TypesMismatch([EmptyType::I32, EmptyType::I32], [x, y]))}
-                type_error!(I32, I32, x, y)
-            }
-        }
-
-    }
-
-    bf_func_pop!{add_i32,
-        I32(x), I32(y), {
-            panic!()
-        }
-    }
-
-    pub fn and(&mut self) -> Result<(), BunFError>{
-
-        match (self.array.pop(), self.array.pop()) {
-
-            (Some(Type::Bool(x)), Some(Type::Bool(y))) => {
-
-                self.output.push_str("[-<+>]<[->]<");
-                /* Add the two values giving us |(0, 1, 2)|0|
-                then if the result is positive subtract one */
-
-                self.array.push(Type::Bool(x && y));
-
-                Ok(())
-            },
-            (x, y) => {
-                // Err(TypesMismatch([EmptyType::Bool, EmptyType::Bool], [x, y]))
-                type_error!(Bool, Bool, x, y)
-            }
-
-        }
-    }
-    bf_func_pop! {or, Bool(x), Bool(y), {
-        self.output.push_str("[-<+>][[-]+]")
-        self.array.push(Type::Bool(x|y))
+    bf_func_pop!{self, add_i32,I32(x), I32(y), {
+        panic!()
     }}
+
+    bf_func_pop!{self, and, Bool(x), Bool(y), {
+        self.output.push_str("[-<+>]<[->]<");
+        /* Add the two values giving us |(0, 1, 2)|0| then if the result is positive subtract one */
+
+        self.array.push(Type::Bool(x && y));
+    }}
+    bf_func_pop!{self, or, Bool(x), Bool(y), {
+        self.output.push_str("[-<+>]<[[-]>+<]>[-<+>]<");
+        /*Combines the two values then if the number is one or greater set it to one*/
+        self.array.push(Type::Bool(x|y));
+    }}
+
+    bf_func_pop!{self, not, Bool(x), {
+        self.output.push_str(">+<[->-<]>[-<+>]<");
+        /*Add push one to the stack then if the bool is one subtract from both then combine the values*/
+        self.array.push(Type::Bool(!x));
+    }}
+
+    bf_func_pop!{self, xor, Bool(x), Bool(y), {
+        self.output.push_str("[<[->-<]>[-<+>]]<");
+        /*
+        if y{
+            if x {
+                case 1, 1
+                subtract one from both x and y
+                giving 0, 0
+            }
+            case 0, 1 or 0, 0
+            combine the bits
+            giving 1,0 or 0, 0
+        }
+
+        */
+        self.array.push(Type::Bool(x^y));
+    }}
+
+    pub fn xnor(&mut self) -> Result<(), BunFError> {
+        self.xor()?;
+        self.not()
+    }
+
+
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    macro_rules!  bunf_test{
+        ($(BunF::$fn_name:ident),+, $var1:expr, $var2:expr) => {
+            for (func, func_name) in [$(BunF::$fn_name),*].iter().zip([$(stringify!($fn_name)),*].iter()){
+                for x in $var1{ for y in $var2{
+                    let mut bunf = BunF::new();
+                    bunf.push(Type::from(x));
+                    bunf.push(Type::from(y));
+                    func(&mut bunf).unwrap();
+                    println!("{:?}{:?}{:?}", func_name, x, y, bunf.array);
+                    assert!(bunf.test_run().unwrap());
+                }}
+            }
+        };
+    }
+
+    #[test]
+    fn two_bit(){
+        bunf_test!(BunF::and, BunF::or, BunF::xor, BunF::xnor, (true, false).iter(), (true, false).iter());
+    }
+    #[test]
+    fn two_bit_op(){
+
+        for (func_num, func) in [BunF::and, BunF::or, BunF::xor, BunF::xnor].iter().enumerate(){
+            for bits in [(true,true),(true,false),(false,true),(false,false)]{
+                let mut x = BunF::new();
+                x.push(Type::Bool(bits.0));
+                x.push(Type::Bool(bits.1));
+                func(&mut x).unwrap();
+                println!("{:?} {:?} {:?}", func_num, bits, x.array);
+                assert!(x.test_run().unwrap())
+            }
+        }
+    }
+
     #[test]
     fn u32_adding() {
-
         let mut x = BunF::new();
-
         x.push(Type::U32(1));
-
         x.push(Type::U32(2));
-
         x.add_u32().unwrap();
-
+        assert!(x.test_run().unwrap())
+    }
+    #[test]
+    fn or() {
+        let mut x = BunF::new();
+        x.push(Type::from(true));
+        x.push(Type::from(false));
+        x.or().unwrap();
+        println!("{:?}", x.array);
         assert!(x.test_run().unwrap())
     }
 
     #[test]
-    fn or() {
+    fn not() {
 
         let mut x = BunF::new();
-
         x.push(Type::from(true));
-
-        x.push(Type::from(false));
-
-
-
+        x.not().unwrap();
+        println!("{:?}", x.array);
+        assert!(x.test_run().unwrap())
     }
 }
