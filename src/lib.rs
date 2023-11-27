@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 mod bf;
 
 // https://minond.xyz/brainfuck/ was used for testing code when it broke
@@ -77,14 +79,23 @@ impl From<String> for Type {
     }
 }
 
+impl From<&str> for Type {
+    fn from(value: &str) -> Self {
+        Type::from(String::from(value))
+    }
+}
+
 impl Into<Vec<u32>> for Type{
     fn into(self) -> Vec<u32> {
         match self{
             Type::U32(x) => {vec!(x)}
-            Type::I32(x) => {vec!(x.is_negative() as u32, x as u32)}
+            Type::I32(x) => {vec!(x.is_negative() as u32, x.abs() as u32)}
             Type::Bool(x) => {vec!(x as u32)}
             Type::Char(x) => {vec!(x as u32)}
-            Type::String(x) => {x.iter().map(|char| *char as u32).collect()}
+            Type::String(x) => {
+                [vec!(0_u32, 0_u32),
+                    x.iter().rev().map(|char| [*char as u32, 0_u32]).flatten().collect(),
+                    vec!(0_u32, x.len() as u32)].into_iter().flatten().collect()}
         }
     }
 }
@@ -120,11 +131,8 @@ pub enum BunFError{
 pub struct BunF{
     pub array: Vec<Type>,
     pub output: String,
-    // TODO 1st array slot will not be used b/c bunf assumes it is full
-    // TODO: Add BF code labeling?
+    // TODO: Add BF code labeling !!!
     // TODO: Inputting values
-    // TODO: Decide if Strings should be backwards or forwards
-    // TODO: If a string is indexed correctly we dont have to store the length
 }
 
 impl Into<Vec<u32>> for BunF{
@@ -159,15 +167,15 @@ impl BunF{
 
     pub fn test_run(self) -> Result<bool, bf::BFError>{
 
-        let mut array = self.run()?;
-
         dbg!(&self.output);
 
-        dbg!(&array);
+        let mut array = self.run()?;
+
+        println!("Array:    {:?}", &array);
 
         let expected: Vec<u32> = self.into();
 
-        dbg!(&expected);
+        println!("Expected: {:?}", &expected);
 
         array.truncate(expected.len());
 
@@ -196,11 +204,13 @@ impl BunF{
 
             // ahhhhh pls work
             Type::String(str) => {
-                format!(">{}>>{}",
-                        str.iter().map(|char|format!(">>{}", "+".repeat(*char as usize))).collect::<String>(),
+                format!(">{}>>>{}",
+                        str.iter().rev()
+                            .map(|char|format!(">>{}", "+".repeat(*char as usize))).collect::<String>(), // add each char
                         "+".repeat(str.len())
                     /*Skips two cells then adds a char every other cell
-                    ending the string with two empty cells then the lenth?*/
+                    ending the string with two empty cells then the length?
+                    The String is backwards in memory so it can be indexed easier*/
                 )}
         });
 
@@ -223,29 +233,18 @@ impl BunF{
         // self.array.pop().ok_or(TypeMismatch(vec!(None),vec!(None)))
     }
 
-    pub fn add_u32(&mut self) -> Result<(), BunFError>{
-
-        match (self.array.pop(), self.array.pop()) {
-            (Some(Type::U32(x)), Some(Type::U32(y))) => {
-
-                let sum = x + y;
-
-                self.output.push_str("[-<+>]<");
+    bf_func_pop!{self, add_u32, U32(x), U32(y), {
+        self.output.push_str("[-<+>]<");
+        self.array.push(Type::U32(x+y));
+    }}
 
 
-                self.array.push(Type::U32(sum));
-                Ok(())
-            },
-            (x, y) => {
-                type_error!(U32, U32, x, y)// ([EmptyType::U32, EmptyType::U32], [x, y]))
-            }
-        }
-    }
+    bf_func_pop!{self, add_i32, I32(x), I32(y), {
 
+        todo!()// TODO
+        self.output.push_str("");
+        self.array.push(Type::I32(x+y));
 
-
-    bf_func_pop!{self, add_i32,I32(x), I32(y), {
-        panic!()
     }}
 
     bf_func_pop!{self, and, Bool(x), Bool(y), {
@@ -289,6 +288,65 @@ impl BunF{
         self.not()
     }
 
+    // generates the bf string to move over the given range
+    // eg. [String, u32, i32] ->
+    // true => forwards, false = backwards
+    pub fn pointer_move(slice: &[Type]) -> (String, String){
+        (
+            slice.iter().map(|x|
+            match x {
+                Type::U32(_) | Type::Bool(_) | Type::Char(_) => ">",
+                Type::I32(_) => ">>",
+                Type::String(_) => ">>>[>>]>",
+            }).collect::<String>(),
+
+            slice.iter().rev().map(|x|
+            match x {
+                Type::U32(_) | Type::Bool(_) | Type::Char(_) => "<",
+                Type::I32(_) => "<<",
+                Type::String(_) => "<[<<]<<<",
+            }).collect::<String>()
+        )
+    }
+
+    pub fn copy(&mut self, rev_index: usize) -> Result<(), BunFError> {
+
+        let (right, left) = BunF::pointer_move(&self.array[self.array.len() - rev_index..]);
+
+        self.output.push_str(
+            &match self.array.get(self.array.len() - rev_index - 1).ok_or(BunFError::TypeMismatch([EmptyType::Any], [None]))? {
+                Type::U32(_) | Type::Char(_) | Type::Bool(_) => {
+                    format!("{left}[-{right}>+>+<<{left}]{right}>>[-<<{left}+{right}>>]<")
+                }
+                Type::I32(_) => {
+                    format!("{left}[-{right}>+>+<<{left}]{right}>[-<{left}+{right}>]\
+                    <{left}<[->{right}>+>>+<<<{left}<]>{right}>>>[-<<<{left}<+>{right}>>>]<")
+                }
+                Type::String(_) => {todo!() /*LOL if this is happening*/}
+            }
+        );
+
+        self.array.push(self.array.get(self.array.len() - rev_index - 1)
+            .ok_or(BunFError::TypeMismatch([EmptyType::Any], [None]))?.clone());
+
+        Ok(())
+
+    }
+
+    pub fn input(&mut self, value: Type) -> (){
+        self.output.push_str(match value{
+            Type::U32(_) => {""}
+            Type::I32(_) => {""}
+            Type::Bool(_) => {""}
+            Type::Char(_) => {">,"}
+            Type::String(_) => {""}
+        });
+
+        self.array.push(value);
+
+        todo!()
+    }
+
 
 }
 
@@ -297,23 +355,86 @@ mod tests {
     use super::*;
 
     macro_rules!  bunf_test{
-        ($(BunF::$fn_name:ident),+, $var1:expr, $var2:expr) => {
+        (($(BunF::$fn_name:ident),+), $var1:expr, $var2:expr) => {
             for (func, func_name) in [$(BunF::$fn_name),*].iter().zip([$(stringify!($fn_name)),*].iter()){
                 for x in $var1{ for y in $var2{
                     let mut bunf = BunF::new();
-                    bunf.push(Type::from(x));
-                    bunf.push(Type::from(y));
+                    bunf.push(Type::from(*x));
+                    bunf.push(Type::from(*y));
                     func(&mut bunf).unwrap();
-                    println!("{:?}{:?}{:?}", func_name, x, y, bunf.array);
+                    println!("{:?}{:?}{:?}{:?}", func_name, x, y, bunf.array);
                     assert!(bunf.test_run().unwrap());
                 }}
+            }
+        };
+            (($(BunF::$fn_name:ident),+), $var:expr) => {
+            for (func, func_name) in [$(BunF::$fn_name),*].iter().zip([$(stringify!($fn_name)),*].iter()){
+                for x in $var1{
+                    let mut bunf = BunF::new();
+                    bunf.push(Type::from(*x));
+                    func(&mut bunf).unwrap();
+                    println!("{:?}{:?}{:?}", func_name, x, bunf.array);
+                    assert!(bunf.test_run().unwrap());
+                }
             }
         };
     }
 
     #[test]
+    fn copy_i32(){
+
+        let mut bunf = BunF::new();
+
+        bunf.push(Type::from(1));
+        bunf.push(Type::from(true));
+        bunf.push(Type::from("Hello World"));
+
+        bunf.copy(2).unwrap();
+        bunf.copy(2).unwrap();
+
+        println!("{:?}", bunf.array);
+
+        assert!(bunf.test_run().unwrap())
+    }
+
+    #[test]
+    fn traverse(){
+        let mut bunf = BunF::new();
+
+        bunf.push(Type::from(1));
+        bunf.push(Type::from(true));
+        bunf.push(Type::from("Hello World"));
+
+        bunf.output.push_str(&BunF::pointer_move(&*bunf.array).1);
+
+        bunf.output.push_str(">+");
+
+        bunf.array[0] = Type::I32(-1);
+
+        println!("{}\n{:?}", bunf.output, bunf.array);
+
+        assert!(bunf.test_run().unwrap())
+    }
+
+    #[test]
+    fn string(){
+        let mut x = BunF::new();
+
+        x.push(Type::from("abcd".to_owned()));
+
+        x.push(Type::from("tacocat".to_owned()));
+
+        x.pop().unwrap();
+        x.pop().unwrap();
+
+        // println!("{:?} {:?} {:?}", x.array, "abcd".as_bytes(), "tacocat".as_bytes());
+
+        assert!(x.test_run().unwrap());
+    }
+
+    #[test]
     fn two_bit(){
-        bunf_test!(BunF::and, BunF::or, BunF::xor, BunF::xnor, (true, false).iter(), (true, false).iter());
+        bunf_test!((BunF::and, BunF::or, BunF::xor, BunF::xnor), [true, false].iter(), [true, false].iter());
     }
     #[test]
     fn two_bit_op(){
