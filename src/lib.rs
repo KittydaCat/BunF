@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 mod bf;
 
 // https://minond.xyz/brainfuck/ was used for testing code when it broke
@@ -131,8 +129,12 @@ pub enum BunFError{
 pub struct BunF{
     pub array: Vec<Type>,
     pub output: String,
-    // TODO: Add BF code labeling !!!
-    // TODO: Inputting values
+    // TODO:
+    // Add BF code labeling !!!
+    // Inputting values
+    // String indexing
+    // if statements
+    // matching chars| sort by decreasing ascii value or by most used?
 }
 
 impl Into<Vec<u32>> for BunF{
@@ -167,7 +169,7 @@ impl BunF{
 
     pub fn test_run(self) -> Result<bool, bf::BFError>{
 
-        dbg!(&self.output);
+        println!("{}", &self.output);
 
         let mut array = self.run()?;
 
@@ -186,7 +188,7 @@ impl BunF{
 
         self.output.push_str(&*match &item { 
 
-            Type::U32(n) => {format!(">{}", "+".repeat(*n as usize))}
+            Type::U32(n) => {format!(">{}\n", "+".repeat(*n as usize))}
 
             Type::I32(x) => {
                 let mut output = String::from(">");
@@ -194,17 +196,17 @@ impl BunF{
                 if x.is_negative(){output.push_str("+")}
                 else{output.push_str("")};
 
-                output.push_str(&*format!(">{}", "+".repeat(x.abs() as usize)));
+                output.push_str(&*format!(">{}\n", "+".repeat(x.abs() as usize)));
 
                 output
 
             }
-            Type::Bool(x) => {format!(">{}", {if *x{"+"} else{""}})}
-            Type::Char(char) => {format!(">{}", "+".repeat(*char as usize))}
+            Type::Bool(x) => {format!(">{}\n", {if *x{"+"} else{""}})}
+            Type::Char(char) => {format!(">{}\n", "+".repeat(*char as usize))}
 
             // ahhhhh pls work
             Type::String(str) => {
-                format!(">{}>>>{}",
+                format!(">{}>>>{}\n",
                         str.iter().rev()
                             .map(|char|format!(">>{}", "+".repeat(*char as usize))).collect::<String>(), // add each char
                         "+".repeat(str.len())
@@ -221,10 +223,10 @@ impl BunF{
 
         self.output.push_str(match self.array.pop().ok_or(BunFError::TypeMismatch([EmptyType::Any],[None]))?{
 
-            Type::U32(_) | Type::Bool(_) | Type::Char(_) => {"[-]<"}
-            Type::I32(_) => {"[-]<[-]<"}
+            Type::U32(_) | Type::Bool(_) | Type::Char(_) => {"[-]<\n"}
+            Type::I32(_) => {"[-]<[-]<\n"}
 
-            Type::String(_) => {"[-]<<<[[-]<<]<"}
+            Type::String(_) => {"[-]<<<[[-]<<]<\n"}
             /*Removes the length then jumps the gap and deletes the string*/
         });
 
@@ -234,39 +236,46 @@ impl BunF{
     }
 
     bf_func_pop!{self, add_u32, U32(x), U32(y), {
-        self.output.push_str("[-<+>]<");
+        self.output.push_str("[-<+>]<\n");
         self.array.push(Type::U32(x+y));
     }}
 
 
     bf_func_pop!{self, add_i32, I32(x), I32(y), {
 
-        todo!()// TODO
-        self.output.push_str("");
+        todo!() //TODO
+
+        // copy the two signs
+        self.output.push_str("<<<[->>>>+>+<<<<<]>>>>>[-<<<<<+>>>>>]<<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<\n");
+        self.output.push_str("[<[->-<]>[-<+>]]<\n"); // XOR them
+        // idk dont look at me. How did i write this beauty? PS it didnt work the first time lol
+        self.output.push_str("[<[<<[->>->>]<<]>>>[>>]<<<[<<<[-]>>[-<<+>>]>[-<<+>>]]<[-]>>-]\n");
+        // add (with nothing if difference in signs) and delete extra sign
+        self.output.push_str("<[-<<+>>]<[-]<\n");
         self.array.push(Type::I32(x+y));
 
     }}
 
     bf_func_pop!{self, and, Bool(x), Bool(y), {
-        self.output.push_str("[-<+>]<[->]<");
+        self.output.push_str("[-<+>]<[->]<\n");
         /* Add the two values giving us |(0, 1, 2)|0| then if the result is positive subtract one */
 
         self.array.push(Type::Bool(x && y));
     }}
     bf_func_pop!{self, or, Bool(x), Bool(y), {
-        self.output.push_str("[-<+>]<[[-]>+<]>[-<+>]<");
+        self.output.push_str("[-<+>]<[[-]>+<]>[-<+>]<\n");
         /*Combines the two values then if the number is one or greater set it to one*/
         self.array.push(Type::Bool(x|y));
     }}
 
     bf_func_pop!{self, not, Bool(x), {
-        self.output.push_str(">+<[->-<]>[-<+>]<");
+        self.output.push_str(">+<[->-<]>[-<+>]<\n");
         /*Add push one to the stack then if the bool is one subtract from both then combine the values*/
         self.array.push(Type::Bool(!x));
     }}
 
     bf_func_pop!{self, xor, Bool(x), Bool(y), {
-        self.output.push_str("[<[->-<]>[-<+>]]<");
+        self.output.push_str("[<[->-<]>[-<+>]]<\n");
         /*
         if y{
             if x {
@@ -285,7 +294,8 @@ impl BunF{
 
     pub fn xnor(&mut self) -> Result<(), BunFError> {
         self.xor()?;
-        self.not()
+        self.not()?:
+        Ok()
     }
 
     // generates the bf string to move over the given range
@@ -316,11 +326,11 @@ impl BunF{
         self.output.push_str(
             &match self.array.get(self.array.len() - rev_index - 1).ok_or(BunFError::TypeMismatch([EmptyType::Any], [None]))? {
                 Type::U32(_) | Type::Char(_) | Type::Bool(_) => {
-                    format!("{left}[-{right}>+>+<<{left}]{right}>>[-<<{left}+{right}>>]<")
+                    format!("{left}[-{right}>+>+<<{left}]{right}>>[-<<{left}+{right}>>]<\n")
                 }
                 Type::I32(_) => {
-                    format!("{left}[-{right}>+>+<<{left}]{right}>[-<{left}+{right}>]\
-                    <{left}<[->{right}>+>>+<<<{left}<]>{right}>>>[-<<<{left}<+>{right}>>>]<")
+                    format!("{left}[-{right}>+>+<<{left}]{right}>[-<{left}+{right}>]\n\
+                    <{left}<[->{right}>+>>+<<<{left}<]>{right}>>>[-<<<{left}<+>{right}>>>]<\n")
                 }
                 Type::String(_) => {todo!() /*LOL if this is happening*/}
             }
@@ -338,8 +348,9 @@ impl BunF{
             Type::U32(_) => {""}
             Type::I32(_) => {""}
             Type::Bool(_) => {""}
-            Type::Char(_) => {">,"}
-            Type::String(_) => {""}
+            Type::Char(_) => {">,\n"}
+            Type::String(_) => {">>>,[[>>]>[->>+<<]>>+<<<<<[[->>+<<]<<]>>,]\
+            >>[[-<<+>>]>>]>[-<<+>>]<<\n"} // TODO: I think this works with empty strings but check
         });
 
         self.array.push(value);
@@ -378,6 +389,20 @@ mod tests {
                 }
             }
         };
+    }
+
+    #[test]
+    fn add_i32(){
+        for y in -3..3{
+            for x in -3..3{
+                let mut bunf = BunF::new();
+                bunf.push(Type::from(x));
+                bunf.push(Type::I32(y));
+                bunf.add_i32().unwrap();
+                println!("{:?}, {:?}, {:?}", x, y, bunf.array);
+                assert!(bunf.test_run().unwrap() || x == -y);
+            }
+        }
     }
 
     #[test]
