@@ -17,13 +17,13 @@ macro_rules! discard {
   ($token:tt, $v:expr) => { $v }
 }
 macro_rules! type_error {
-    ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident $(,)?) => {
+    ($ex1:ident, $ex2:ident, $f1:expr, $f2:expr $(,)?) => {
         Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
     };
     // ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident,) => {
     //     Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
     // };
-    ($ex1:ident, $f1:ident $(,)?) => {
+    ($ex1:ident, $f1:expr $(,)?) => {
         Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
     };
     // ($ex1:ident, $f1:ident,) => {
@@ -124,6 +124,7 @@ impl From<Type> for EmptyType{
 pub enum BunFError{
     TypeMismatch([EmptyType; 1], [Option<Type>; 1]),
     TypesMismatch([EmptyType; 2], [Option<Type>; 2]),// expected ... found ...
+    InvalidStringIndex,
 }
 
 pub struct BunF{
@@ -240,16 +241,22 @@ impl BunF{
         self.array.push(Type::U32(x+y));
     }}
 
+    // TODO test
+    bf_func_pop!{self, diff_u32, U32(x), U32(y),{
+        self.output.push_str("[<[<[->->>]>>>]>[>]<[>]<[->>>]<<<]");
+        self.array.push(Type::U32(x.abs_diff(y)));
+    }}
 
     bf_func_pop!{self, add_i32, I32(x), I32(y), {
-
-        todo!() //TODO
 
         // copy the two signs
         self.output.push_str("<<<[->>>>+>+<<<<<]>>>>>[-<<<<<+>>>>>]<<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<\n");
         self.output.push_str("[<[->-<]>[-<+>]]<\n"); // XOR them
         // idk dont look at me. How did i write this beauty? PS it didnt work the first time lol
-        self.output.push_str("[<[<<[->>->>]<<]>>>[>>]<<<[<<<[-]>>[-<<+>>]>[-<<+>>]]<[-]>>-]\n");
+        // if the signs are different subtract the u32s
+        self.output.push_str("[[<[<<[->>->>]>>>>]>[>]<[>]<[->>>>]<<<<]\n");
+        // and if the remaining one and copy the sign over
+        self.output.push_str("<[[-<<+>>]<<<[-]>>[-<<+>>]>]<[-]>>]\n");
         // add (with nothing if difference in signs) and delete extra sign
         self.output.push_str("<[-<<+>>]<[-]<\n");
         self.array.push(Type::I32(x+y));
@@ -294,8 +301,8 @@ impl BunF{
 
     pub fn xnor(&mut self) -> Result<(), BunFError> {
         self.xor()?;
-        self.not()?:
-        Ok()
+        self.not()?;
+        Ok(())
     }
 
     // generates the bf string to move over the given range
@@ -356,6 +363,27 @@ impl BunF{
         self.array.push(value);
 
         todo!()
+    }
+
+    // TODO test
+    pub fn index(&mut self) -> Result<(), BunFError> {
+        match (self.array.get(self.array.len()-2), self.array.last()){
+            (Some(Type::String(str)), Some(Type::U32(x))) => {
+
+                let char = *str.get(*x as usize).ok_or(BunFError::InvalidStringIndex)?;
+
+                self.array.pop();
+                self.array.push(Type::Char(char));
+                // add the bridge of ones
+                self.output.push_str("[-<<<<[<]+[>]>>>]\n");
+                // copy the char
+                self.output.push_str("<<<<[<]>[-[>]>>>+>+<<<<<[<]>]+[>]>>>>-[-<<<<<[<]>+[>]>>>>]<\n");
+                // delete the ones bridge
+                self.output.push_str("<<<<[<]>>[->>]>>>\n");
+                Ok(())
+            },
+            (x,y) => {type_error!(String, U32, x.cloned(), y.cloned())}
+        }
     }
 
 
