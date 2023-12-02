@@ -18,17 +18,13 @@ macro_rules! discard {
 }
 macro_rules! type_error {
     ($ex1:ident, $ex2:ident, $f1:expr, $f2:expr $(,)?) => {
-        Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
+        Err(BunFError::TypeMismatch(vec!(EmptyType::$ex1, EmptyType::$ex2), vec!($f1, $f2)))
     };
-    // ($ex1:ident, $ex2:ident, $f1:ident, $f2:ident,) => {
-    //     Err(BunFError::TypesMismatch([EmptyType::$ex1, EmptyType::$ex2], [$f1, $f2]))
-    // };
+
     ($ex1:ident, $f1:expr $(,)?) => {
-        Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
+        Err(BunFError::TypeMismatch(vec!(EmptyType::$ex1), vec!($f1)))
     };
-    // ($ex1:ident, $f1:ident,) => {
-    //     Err(BunFError::TypeMismatch([EmptyType::$ex1], [$f1]))
-    // };
+
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +34,7 @@ pub enum Type{
     Bool(bool),
     Char(u8),
     String(Vec<u8>),
+    EmptyCell,
 }
 
 impl From<u32> for Type {
@@ -94,6 +91,7 @@ impl Into<Vec<u32>> for Type{
                 [vec!(0_u32, 0_u32),
                     x.iter().rev().map(|char| [*char as u32, 0_u32]).flatten().collect(),
                     vec!(0_u32, x.len() as u32)].into_iter().flatten().collect()}
+            Type::EmptyCell => {vec!(0)}
         }
     }
 }
@@ -105,31 +103,34 @@ pub enum EmptyType{
     Bool,
     Char,
     String,
+    EmptyCell,
     Any,
 }
 
 impl From<Type> for EmptyType{
     fn from(value: Type) -> Self {
         match value{
-            Type::U32(_) => {EmptyType::U32 }
-            Type::I32(_) => {EmptyType::I32 }
-            Type::Bool(_) => {EmptyType::Bool }
-            Type::Char(_) => {EmptyType::Char }
-            Type::String(_) => {EmptyType::String }
+            Type::U32(_) => EmptyType::U32,
+            Type::I32(_) => EmptyType::I32,
+            Type::Bool(_) => EmptyType::Bool,
+            Type::Char(_) => EmptyType::Char,
+            Type::String(_) => EmptyType::String,
+            Type::EmptyCell => EmptyType::EmptyCell,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum BunFError{
-    TypeMismatch([EmptyType; 1], [Option<Type>; 1]),
-    TypesMismatch([EmptyType; 2], [Option<Type>; 2]),// expected ... found ...
+    TypeMismatch(Vec<EmptyType>, Vec<Option<Type>>),
+    InvalidIndex,
     InvalidStringIndex,
 }
 
 pub struct BunF{
     pub array: Vec<Type>,
     pub output: String,
+    pub index: usize,
     // TODO:
     // Add BF code labeling !!!
     // Inputting values
@@ -147,7 +148,7 @@ impl Into<Vec<u32>> for BunF{
 impl BunF{
 
     pub fn new() -> Self{
-        Self{array: vec![], output: String::new()}
+        Self{array: vec![], output: String::new(), index: 0}
     }
 
     pub fn run(&self) -> Result<Vec<u32>, bf::BFError>{
@@ -185,6 +186,81 @@ impl BunF{
         Ok(array == expected)
     }
 
+    fn get_slice(&mut self, index: usize, length: usize) -> Box<[Type]> {
+
+        (index..index+length).map(|index| match self.array.get(index){
+            Some(x) => x.clone(),
+            None => Type::EmptyCell,
+        }).collect()
+    }
+
+    pub fn set(&mut self, item: Type, index: usize) -> Result<(), BunFError> {
+
+        use Type::EmptyCell as EC;
+
+        if self.array.len() <= index {return Err(BunFError::InvalidIndex)}
+
+        match item{
+            Type::U32(val) => {
+                match *self.get_slice(index, 1){
+                    [EC] => {
+                        self.array[index] = Type::U32(val);
+                        self.output.push_str(&format!("{}\n", "+".repeat(val as usize)))
+                    },
+                    [ref x] => return type_error!(EmptyCell, Some(x)),
+                    _ => unreachable!()
+                }
+                // if let [EC] = self.get_slice(index, 1){
+                //     self.array[index] = Type::U32(val);
+                //     self.output.push_str(&format!("{}\n", "+".repeat(val as usize)))
+                // } else if x {  }
+            },
+            Type::I32(val) => {
+                match *self.get_slice(index, 2){
+                    [EC, EC] => {
+                        self.array.remove(index);
+                        self.array[index] = Type::I32(val);
+                        self.output.push_str(&format!("{:?}{}\n",
+                                   if val.is_negative() {"+>"} else {""},
+                                   "+".repeat(val.abs() as usize)))},
+                    [x, y] => return type_error!(EmptyCell, EmptyCell,
+                        Some(x), Some(y)),
+
+                    _ => unreachable!()
+                }
+            },
+            Type::Bool(val) => {
+                match &self.get_slice(index, 1)[..]{
+                    [EC] => {
+                        self.array[index] = Type::Bool(val);
+                        self.output.push_str(if val {"+\n"} else {"\n"})
+                    },
+                    [x] => return type_error!(EmptyCell, Some(x.clone())),
+                    _ => unreachable!()
+                }
+            },
+            Type::Char(val) => {
+                match &self.get_slice(index, 1)[..]{
+                    [EC] => {
+                        self.array[index] = Type::Char(val);
+                        self.output.push_str(&format!("{}\n", "+".repeat(val as usize)));
+                    },
+                    [x] => return type_error!(EmptyCell, Some(x.clone())),
+                    _ => unreachable!()
+                }
+            },
+            Type::String(val) => {
+                match self.get_slice(index, val.len()*2 + 5)[..]{
+                    _ => {}
+                }
+            },
+            Type::EmptyCell => {},
+        };
+
+        Ok(())
+
+    }
+
     pub fn push(&mut self, item: Type){
 
         self.output.push_str(&*match &item { 
@@ -215,6 +291,7 @@ impl BunF{
                     ending the string with two empty cells then the length?
                     The String is backwards in memory so it can be indexed easier*/
                 )}
+            Type::EmptyCell => String::from(">")
         });
 
         self.array.push(item);
@@ -222,13 +299,14 @@ impl BunF{
 
     pub fn pop(&mut self) -> Result<(), BunFError>{
 
-        self.output.push_str(match self.array.pop().ok_or(BunFError::TypeMismatch([EmptyType::Any],[None]))?{
+        self.output.push_str(match self.array.pop().ok_or(BunFError::TypeMismatch(vec!(EmptyType::Any),vec!(None)))?{
 
-            Type::U32(_) | Type::Bool(_) | Type::Char(_) => {"[-]<\n"}
-            Type::I32(_) => {"[-]<[-]<\n"}
+            Type::U32(_) | Type::Bool(_) | Type::Char(_) => "[-]<\n",
+            Type::I32(_) => "[-]<[-]<\n",
 
-            Type::String(_) => {"[-]<<<[[-]<<]<\n"}
+            Type::String(_) => "[-]<<<[[-]<<]<\n",
             /*Removes the length then jumps the gap and deletes the string*/
+            Type::EmptyCell => "<"
         });
 
         Ok(())
@@ -312,14 +390,14 @@ impl BunF{
         (
             slice.iter().map(|x|
             match x {
-                Type::U32(_) | Type::Bool(_) | Type::Char(_) => ">",
+                Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => ">",
                 Type::I32(_) => ">>",
                 Type::String(_) => ">>>[>>]>",
             }).collect::<String>(),
 
             slice.iter().rev().map(|x|
             match x {
-                Type::U32(_) | Type::Bool(_) | Type::Char(_) => "<",
+                Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => "<",
                 Type::I32(_) => "<<",
                 Type::String(_) => "<[<<]<<<",
             }).collect::<String>()
@@ -331,7 +409,8 @@ impl BunF{
         let (right, left) = BunF::pointer_move(&self.array[self.array.len() - rev_index..]);
 
         self.output.push_str(
-            &match self.array.get(self.array.len() - rev_index - 1).ok_or(BunFError::TypeMismatch([EmptyType::Any], [None]))? {
+            &match self.array.get(self.array.len() - rev_index - 1)
+                .ok_or(BunFError::TypeMismatch(vec!(EmptyType::Any),vec!(None)))? {
                 Type::U32(_) | Type::Char(_) | Type::Bool(_) => {
                     format!("{left}[-{right}>+>+<<{left}]{right}>>[-<<{left}+{right}>>]<\n")
                 }
@@ -340,11 +419,13 @@ impl BunF{
                     <{left}<[->{right}>+>>+<<<{left}<]>{right}>>>[-<<<{left}<+>{right}>>>]<\n")
                 }
                 Type::String(_) => {todo!() /*LOL if this is happening*/}
+
+                Type::EmptyCell => String::from(">")
             }
         );
 
         self.array.push(self.array.get(self.array.len() - rev_index - 1)
-            .ok_or(BunFError::TypeMismatch([EmptyType::Any], [None]))?.clone());
+            .ok_or(BunFError::TypeMismatch(vec!(EmptyType::Any),vec!(None)))?.clone());
 
         Ok(())
 
@@ -352,9 +433,7 @@ impl BunF{
 
     pub fn input(&mut self, value: Type) -> (){
         self.output.push_str(match value{
-            Type::U32(_) => {""}
-            Type::I32(_) => {""}
-            Type::Bool(_) => {""}
+            Type::U32(_) | Type::I32(_) | Type::Bool(_) | Type::EmptyCell => {todo!()}
             Type::Char(_) => {">,\n"}
             Type::String(_) => {">>>,[[>>]>[->>+<<]>>+<<<<<[[->>+<<]<<]>>,]\
             >>[[-<<+>>]>>]>[-<<+>>]<<\n"} // TODO: I think this works with empty strings but check
