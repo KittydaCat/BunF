@@ -1,5 +1,4 @@
 use crate::BunFError::TypeMismatch;
-use crate::EmptyType::EmptyCell;
 
 mod bf;
 
@@ -85,8 +84,14 @@ pub enum EmptyType{
     Any,
 }
 
-impl From<Type> for EmptyType{
-    fn from(value: Type) -> Self {
+impl EmptyType {
+    pub fn from_vec(array: &[Type]) -> Vec<EmptyType>{
+        array.iter().map(|x| EmptyType::from(x)).collect()
+    }
+}
+
+impl From<&Type> for EmptyType{
+    fn from(value: &Type) -> Self {
         match value{
             Type::U32(_) => EmptyType::U32,
             Type::I32(_) => EmptyType::I32,
@@ -100,7 +105,7 @@ impl From<Type> for EmptyType{
 
 #[derive(Debug, Clone)]
 pub enum BunFError{
-    TypeMismatch(Vec<EmptyType>, Vec<Type>),
+    TypeMismatch(Vec<EmptyType>, Vec<EmptyType>),
     InvalidIndex,
     InvalidStringIndex,
 }
@@ -122,7 +127,48 @@ impl Into<Vec<u32>> for BunF{
     }
 }
 
+macro_rules! bunf_func {
+    ($self: ident, $name: ident, $($type: ident($var:ident)),+, $code:block) => {
+
+    };
+}
+
+macro_rules! discard {
+  ($token:tt, $v:expr) => { $v }
+}
+
 impl BunF{
+
+    pub fn add_i32(&mut self, index: usize) -> Result<(), BunFError>{
+
+        self.move_to(index)?;
+
+        let expected = vec![EmptyType::I32, EmptyType::I32, EC, EC, EC, EC, EC, EC, EC];
+
+        let found = self.get_empty(index, expected.len())
+
+
+        if found == expected {
+
+            self.array.remove(index);
+            self.array[index] = Type::I32(*x + *y);
+
+            // copy the two signs
+            self.output.push_str("<<<[->>>>+>+<<<<<]>>>>>[-<<<<<+>>>>>]<<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<\n");
+            self.output.push_str("[<[->-<]>[-<+>]]<\n"); // XOR them
+            // idk dont look at me. How did i write this beauty? PS it didnt work the first time lol
+            // if the signs are different subtract the u32s
+            self.output.push_str("[[<[<<[->>->>]>>>>]>[>]<[>]<[->>>>]<<<<]\n");
+            // and if the remaining one and copy the sign over
+            self.output.push_str("<[[-<<+>>]<<<[-]>>[-<<+>>]>]<[-]>>]\n");
+            // add (with nothing if difference in signs) and delete extra sign
+            self.output.push_str("<[-<<+>>]<[-]<\n");
+        } else {
+            return Err(TypeMismatch(expected, found));
+        }
+
+        Ok(())
+    }
 
     pub fn new() -> Self{
         Self{array: vec![], output: String::new(), index: 0}
@@ -177,6 +223,12 @@ impl BunF{
         self.array.get_mut(index .. index+length).unwrap()
     }
 
+    fn get_empty(&mut self, index: usize, length: usize) -> Vec<EmptyType> {
+
+        while index + length < self.array.len() {self.array.push(Type::EmptyCell);};
+
+        EmptyType::from_vec(self.array.get(index .. index+length).unwrap())
+    }
     fn get(&mut self, index: usize) -> &mut Type {
 
         while index < self.array.len(){self.array.push(Type::EmptyCell);};
@@ -328,6 +380,8 @@ impl BunF{
             }).collect::<String>()
         )
     }
+
+
 }
 
 #[cfg(test)]
