@@ -23,8 +23,7 @@ pub enum BFError {
 //     }
 // }
 
-
-pub struct BFInterpreter{
+pub struct BFInterpreter {
     pub array: Vec<u32>,
     pub array_pointer: usize,
 
@@ -35,13 +34,15 @@ pub struct BFInterpreter{
     pub output: Box<dyn FnMut(char) -> Result<(), BFError>>,
 }
 
-impl BFInterpreter{
+impl BFInterpreter {
+    pub fn new(
+        program: String,
+        input: Box<dyn FnMut() -> Result<char, BFError>>,
+        output: Box<dyn FnMut(char) -> Result<(), BFError>>,
+    ) -> Self {
+        // change to create?
 
-    pub fn new(program: String,
-               input: Box<dyn FnMut() -> Result<char, BFError>>,
-               output: Box<dyn FnMut(char) -> Result<(), BFError>>) -> Self{ // change to create?
-
-        Self{
+        Self {
             array: vec![0_u32],
             array_pointer: 0,
             program,
@@ -52,19 +53,27 @@ impl BFInterpreter{
     }
 
     pub fn run(&mut self) -> Result<(), BFError> {
-
-        run_bf(&mut self.array, &mut self.array_pointer, &self.program,
-               &mut *self.input, &mut *self.output, &mut self.program_index)
+        run_bf(
+            &mut self.array,
+            &mut self.array_pointer,
+            &self.program,
+            &mut *self.input,
+            &mut *self.output,
+            &mut self.program_index,
+        )
     }
 
     pub fn exec_one(&mut self) -> Result<(), BFError> {
-
-
-        if let Some(instruction) = self.program.chars().nth(self.program_index){
-
-            exec_bf_instruction(&mut self.array, &mut self.array_pointer, &self.program,
-                                &mut *self.input, &mut *self.output,
-                                &mut self.program_index, instruction)?;
+        if let Some(instruction) = self.program.chars().nth(self.program_index) {
+            exec_bf_instruction(
+                &mut self.array,
+                &mut self.array_pointer,
+                &self.program,
+                &mut *self.input,
+                &mut *self.output,
+                &mut self.program_index,
+                instruction,
+            )?;
 
             self.program_index += 1;
 
@@ -81,42 +90,64 @@ impl BFInterpreter{
     // }
 }
 
-pub fn run_bf(array: &mut Vec<u32>, array_index: &mut usize, instructions: &str,
-              input: &mut dyn FnMut() -> Result<char, BFError>,
-              output: &mut dyn FnMut(char) -> Result<(), BFError>, instruct_index: &mut usize)
-              -> Result<(), BFError> {
-
-    while *array_index >= array.len() { array.push(0); } // make sure the index is valid
+pub fn run_bf(
+    array: &mut Vec<u32>,
+    array_index: &mut usize,
+    instructions: &str,
+    input: &mut dyn FnMut() -> Result<char, BFError>,
+    output: &mut dyn FnMut(char) -> Result<(), BFError>,
+    instruct_index: &mut usize,
+) -> Result<(), BFError> {
+    while *array_index >= array.len() {
+        array.push(0);
+    } // make sure the index is valid
 
     while let Some(instruction) = instructions.chars().nth(*instruct_index) {
-
-        exec_bf_instruction(array, array_index, instructions, input, output, instruct_index, instruction)?;
+        exec_bf_instruction(
+            array,
+            array_index,
+            instructions,
+            input,
+            output,
+            instruct_index,
+            instruction,
+        )?;
 
         *instruct_index += 1;
     }
     Ok(())
 }
 
-pub fn exec_bf_instruction(array: &mut Vec<u32>, array_index: &mut usize, instructions: &str,
-                           input: &mut dyn FnMut() -> Result<char, BFError>,
-                           output: &mut dyn FnMut(char) -> Result<(), BFError>,
-                           instruct_index: &mut usize, instruction: char)
-                           -> Result<(), BFError> {
-
+pub fn exec_bf_instruction(
+    array: &mut Vec<u32>,
+    array_index: &mut usize,
+    instructions: &str,
+    input: &mut dyn FnMut() -> Result<char, BFError>,
+    output: &mut dyn FnMut(char) -> Result<(), BFError>,
+    instruct_index: &mut usize,
+    instruction: char,
+) -> Result<(), BFError> {
     match instruction {
-
         // increment (>) and decrement (>)
-        '+' => { array[*array_index] += 1; }
-        '-' => { array[*array_index] -= 1; }
+        '+' => {
+            array[*array_index] += 1;
+        }
+        '-' => {
+            array[*array_index] -= 1;
+        }
 
         // pointer left and right
         '>' => {
             *array_index = *array_index + 1;
 
-            if *array_index == array.len() { array.push(0); } // make sure the index is valid
+            if *array_index == array.len() {
+                array.push(0);
+            } // make sure the index is valid
         }
         '<' => {
-            if *array_index == 0 { return Err(BFError::NegativeArrayPointer) };
+            if *array_index == 0 {
+                return Err(BFError::NegativeArrayPointer);
+            };
             *array_index = *array_index - 1;
         }
 
@@ -133,13 +164,18 @@ pub fn exec_bf_instruction(array: &mut Vec<u32>, array_index: &mut usize, instru
         // input (,) and output (.)
         ',' => {
             let char = input()?;
-            if char.is_ascii() { array[*array_index] = char as u32 }
-            else { return Err(BFError::NonASCIIChar) }
+            if char.is_ascii() {
+                array[*array_index] = char as u32
+            } else {
+                return Err(BFError::NonASCIIChar);
+            }
         }
         '.' => {
             if (array[*array_index] as u8).is_ascii() {
                 output(array[*array_index] as u8 as char)?
-            } else { return Err(BFError::NonASCIIChar) }
+            } else {
+                return Err(BFError::NonASCIIChar);
+            }
         }
         _ => {}
     }
@@ -148,31 +184,38 @@ pub fn exec_bf_instruction(array: &mut Vec<u32>, array_index: &mut usize, instru
 }
 
 fn equalize_brackets(string: &str, mut index: usize, direction: isize) -> Result<usize, BFError> {
-
     let mut depth = 0;
 
     'find_next_bracket: loop {
-
         match string.chars().nth(index) {
-            Some('[') => { depth += 1; },
-            Some(']') => { depth -= 1; },
+            Some('[') => {
+                depth += 1;
+            }
+            Some(']') => {
+                depth -= 1;
+            }
 
-            Some(_) => {},
+            Some(_) => {}
 
-            None => { return Err(BFError::UnbalancedBrackets); }
+            None => {
+                return Err(BFError::UnbalancedBrackets);
+            }
         };
-        if depth == 0 { break 'find_next_bracket };
+        if depth == 0 {
+            break 'find_next_bracket;
+        };
 
         index = match index.checked_add_signed(direction) {
-            Some(x) => { x },
-            None => { return Err(BFError::UnbalancedBrackets); }
+            Some(x) => x,
+            None => {
+                return Err(BFError::UnbalancedBrackets);
+            }
         };
     }
     Ok(index)
 }
 
-
-fn main(){
+fn main() {
     //
     // use std::fs::File;
     // use std::io::prelude::*;
