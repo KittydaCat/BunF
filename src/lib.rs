@@ -1,5 +1,6 @@
 use crate::BunFError::TypeMismatch;
 use std::fmt::{Display, Formatter};
+use std::io::Read;
 
 use Type::EmptyCell as EC;
 
@@ -16,10 +17,16 @@ pub enum Type {
     Bool(bool),
     Char(u8),
     String(Vec<u8>),
+    IString(Vec<u8>),
     EmptyCell,
 }
 
 impl Type{
+
+    fn empty_slice(length: usize) -> Vec<Type> {
+        (0..length).map(|_| Type::EmptyCell).collect()
+    }
+
     fn len(&self) -> usize {
         match self {
             Type::U32(_) => {1}
@@ -28,6 +35,7 @@ impl Type{
             Type::Char(_) => {1}
             Type::String(val) => {val.len()*2 + 4}
             Type::EmptyCell => {1}
+            Type::IString(_) => {unimplemented!()}
         }
     }
 
@@ -64,20 +72,26 @@ impl From<char> for Type {
 
 impl From<String> for Type {
     fn from(value: String) -> Self {
-        assert!(value.is_ascii(), "String contained non Ascii values");
-
-        assert!(
-            !value.chars().any(|x| x == '\0'),
-            "String contained null bytes"
-        );
-
-        Self::String(value.into_bytes())
+        Type::from(value.as_bytes())
     }
 }
 
 impl From<&str> for Type {
     fn from(value: &str) -> Self {
-        Type::from(String::from(value))
+        Type::from(value.as_bytes())
+    }
+}
+
+impl From<&[u8]> for Type{
+    fn from(value: &[u8]) -> Self {
+        assert!(value.is_ascii(), "String contained non Ascii values");
+
+        assert!(
+            !value.iter().any(|x| x == &0),
+            "String contained null bytes"
+        );
+
+        Self::String(Vec::from(value))
     }
 }
 
@@ -96,7 +110,7 @@ impl Into<Vec<u32>> for &Type {
             Type::Char(x) => {
                 vec![*x as u32]
             }
-            Type::String(x) => [
+            Type::String(x) | Type::IString(x) => [
                 vec![0_u32, 0_u32],
                 x.iter()
                     .rev()
@@ -115,6 +129,20 @@ impl Into<Vec<u32>> for &Type {
     }
 }
 
+impl From<&Type> for String {
+    fn from(value: &Type) -> Self {
+        match value {
+            Type::U32(val) => (*val).to_string(),
+            Type::I32(val) => (*val).to_string(),
+            Type::Bool(val) => String::from(if *val {'t'} else {'f'}),
+            Type::Char(val) => (*val).to_string(),
+            Type::String(val) => String::from_utf8(val.clone()).unwrap(),
+            Type::IString(val) => String::from_utf8(val.clone()).unwrap(),
+            Type::EmptyCell => {unimplemented!()}
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum EmptyType {
     U32,
@@ -122,6 +150,7 @@ pub enum EmptyType {
     Bool,
     Char,
     String,
+    IString,
     EmptyCell,
     Any,
 }
@@ -140,6 +169,7 @@ impl From<&Type> for EmptyType {
             Type::Bool(_) => EmptyType::Bool,
             Type::Char(_) => EmptyType::Char,
             Type::String(_) => EmptyType::String,
+            Type::IString(_) => EmptyType::IString,
             Type::EmptyCell => EmptyType::EmptyCell,
         }
     }
@@ -173,11 +203,12 @@ pub struct BunF {
     pub array: Vec<Type>,
     pub output: String,
     pub index: usize,
+    pub expected_input: String,
+    pub expected_output: String,
     // TODO:
     // Add BF code labeling !!!
-    // Inputting values
     // if statements
-    // matching chars| sort by decreasing ascii value or by most used?
+    // matching chars | sort by decreasing ascii value or by most used?
 }
 
 impl Into<Vec<u32>> for &BunF {
@@ -190,17 +221,45 @@ impl Into<Vec<u32>> for &BunF {
     }
 }
 
+impl Into<Vec<u32>> for &mut BunF {
+    fn into(self) -> Vec<u32> {
+        <&BunF as Into<Vec<u32>>>::into(self)
+    }
+}
+
 impl BunF {
     pub fn new() -> Self {
         Self {
             array: vec![],
             output: String::new(),
             index: 0,
+            expected_input: String::new(),
+            expected_output: String::new(),
         }
     }
 
     pub fn run(&self) -> Result<(Vec<u32>, usize), bf::BFError> {
         self.run_io(&mut || unimplemented!(), &mut |_| unimplemented!())
+    }
+
+    pub fn str_run(&self, input: &str) -> Result<((Vec<u32>, usize), String), bf::BFError> {
+
+        let mut x = 0;
+        let mut input_fn = move || {
+            let char = input.chars().nth(x).ok_or(bf::BFError::InputFailed);
+            x += 1;
+            char
+        };
+
+        let mut output = String::new();
+
+        let mut output_fn = |char| {
+            output.push(char);
+            Ok(())
+        };
+
+        Ok((self.run_io(&mut input_fn, &mut output_fn)?, output))
+
     }
 
     pub fn run_io(
@@ -217,17 +276,21 @@ impl BunF {
         Ok((array, index))
     }
 
-    pub fn test_run(mut self) -> Result<bool, bf::BFError> {
-        println!("{}", &self.output);
+    pub fn io_test_run(&mut self,
+                       input: &mut dyn FnMut() -> Result<char, bf::BFError>,
+                       output: &mut dyn FnMut(char) -> Result<(), bf::BFError>,
+    ) -> Result<bool, bf::BFError> {
 
         // automagically moves the cursor to 0 until I can implement sizes for Types
         self.move_to(0);
 
-        let (mut found, index) = self.run()?;
+        println!("{}", &self.output);
+
+        let (mut found, index) = self.run_io(input, output)?;
 
         println!("Found: {index}  {:?}", &found);
 
-        let mut expected: Vec<u32> = (&self).into();
+        let mut expected: Vec<u32> = self.into();
 
         println!("Expected: {:?}", &expected);
 
@@ -252,6 +315,25 @@ impl BunF {
         };
 
         Ok(found == expected && index == 0)
+    }
+
+    pub fn test_run(mut self) -> Result<bool, bf::BFError> {
+        let mut x = 0;
+        let input = self.expected_input.clone();
+        let mut input_fn = move || {
+            let char = input.chars().nth(x).ok_or(bf::BFError::InputFailed);
+            x += 1;
+            char
+        };
+
+        let mut found_output = String::new();
+
+        let mut output_fn = |char| {
+            found_output.push(char);
+            Ok(())
+        };
+
+        Ok(self.io_test_run(&mut input_fn, &mut output_fn)? && (found_output == self.expected_output))
     }
 
     fn get_slice(&mut self, index: usize, length: usize) -> &mut [Type] {
@@ -287,10 +369,6 @@ impl BunF {
         self.array.get_mut(index).unwrap()
     }
 
-    fn empty_slice(length: usize) -> Vec<Type> {
-        (0..length).map(|_| Type::EmptyCell).collect()
-    }
-
     pub fn move_to(&mut self, index: usize) {
 
         // dbg!(&self);
@@ -302,7 +380,7 @@ impl BunF {
                 let str = match self.get(self.index) {
                     Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => ">",
                     Type::I32(_) => ">>",
-                    Type::String(_) => ">>[>>]>>",
+                    Type::String(_) | Type::IString(_) => ">>[>>]>>",
                 };
 
                 self.output.push_str(str); // dbg!(str, index).0);
@@ -314,7 +392,7 @@ impl BunF {
                 let str = match self.get(self.index - 1) {
                     Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => "<",
                     Type::I32(_) => "<<",
-                    Type::String(_) => "<<<<[<<]"
+                    Type::String(_)  | Type::IString(_) => "<<<<[<<]"
                 };
 
                 self.output.push_str(str); //dbg!(str, index).0);
@@ -403,6 +481,31 @@ impl BunF {
                     ));
                 }
             }
+            Type::IString(val) => {
+                let len = val.len() * 2 + 5;
+                let x = self.get_slice(index, len);
+                let expected = (0..len).map(|_| EC).collect::<Vec<Type>>();
+
+                if x == expected {
+                    self.output.push_str(&format!(
+                        "{}>>>{}>\n",
+                        val.iter()
+                            .rev()
+                            .map(|char| format!(">>{}", "+".repeat(*char as usize)))
+                            .collect::<String>(), // add each char
+                        "+".repeat(val.len())
+                    ));
+                    (0..len).for_each(|_| {
+                        self.array.remove(index);
+                    });
+                    self.array.insert(index, Type::IString(val));
+                } else {
+                    return Err(TypeMismatch(
+                        expected.iter().map(|_| EEC).collect(),
+                        Vec::from(x),
+                    ));
+                }
+            }
             Type::EmptyCell => {
                 todo!() // ?
             }
@@ -417,9 +520,9 @@ impl BunF {
         self.move_to(index);
 
         match self.get(index) {
-            Type::U32(_) | Type::Bool(_) | Type::Char(_) => {
+            val @ (Type::U32(_) | Type::Bool(_) | Type::Char(_)) => {
+                *val = Type::EmptyCell;
                 self.output.push_str("[-]\n");
-                self.array[index] = Type::EmptyCell;
             }
             Type::I32(_) => {
                 self.output.push_str("[-]>[-]\n");
@@ -437,7 +540,7 @@ impl BunF {
 
                 self.index += len-1;
             }
-            Type::EmptyCell => {
+            Type::EmptyCell | Type::IString(_)=> {
                 //     Todo?
             }
         };
@@ -487,11 +590,141 @@ impl BunF {
 
         Ok(())
     }
+
+    pub fn input(&mut self, index: usize, input_val: Type) -> Result<(), BunFError> {
+
+        self.move_to(index);
+
+        match input_val {
+
+            Type::U32(_) | Type::I32(_) | Type::Bool(_) => {todo!()}
+
+            char @ Type::Char(_) => {
+
+                self.expected_input.push_str(&String::from(&char));
+                self.expected_input.push(0 as char);
+
+                let val = self.get(index);
+
+                if *val == Type::EmptyCell{
+                    *val = char;
+                    self.output.push_str(",");
+                } else {
+                    return Err(TypeMismatch(vec![EEC], vec![val.clone()]))
+                }
+            }
+
+            Type::IString(str) => {
+
+                // self.expected_input.push_str(&String::from_utf8(str).unwrap());
+                self.expected_input.push_str(&String::from_utf8(str.clone()).unwrap());
+                self.expected_input.push(0 as char);
+
+                self.output.push_str(">>,[[>>]>[->>+<<]>>+<<<<<[[->>+<<]<<]>>,]\n");
+
+                self.output.push_str(">>[[-<<+>>]>>]>[-<<+>>]<\n");
+
+                let end = &self.array[index ..];
+
+                if end == Type::empty_slice(end.len()){
+
+                    (0..end.len()).for_each(|_| {self.array.pop();});
+
+                    self.array.push(Type::IString(str));
+
+                }
+
+                self.index += 1;
+
+            }
+
+            Type::String(_) | Type::EmptyCell=> {unimplemented!()}
+        }
+
+        Ok(())
+    }
+
+    pub fn input_str(&mut self, index: usize, str: &str) -> Result<(), BunFError> {
+
+        self.input(index, Type::IString(Vec::from(str.as_bytes())))
+
+    }
+
+    pub fn index_str(&mut self, index: usize) -> Result<(), BunFError> {
+
+        self.move_to(index+1);
+
+        let found = self.get_slice(index, 3);
+
+        if let [Type::IString(val) | Type::String(val), Type::U32(str_index), EC] = found{
+
+            self.array[index+1] = Type::Char(val[*str_index as usize]);
+
+            // fill ones
+            self.output.push_str("[-<<<[<]+[>]>>]\n");
+            // grab the indexed value and copy it
+            self.output.push_str("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
+            // put the value back abd remove the ones
+            self.output.push_str("[-<<<<[<]<+>>[>]>>>]<<<<[<]>[>->]>>\n");
+        } else {return Err(TypeMismatch(vec![EmptyType::IString, EmptyType::U32, EEC], Vec::from(found)))}
+
+        Ok(())
+
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bf() {
+
+        // let mut bunf = BunF::new();
+        //
+        // bunf.input_str(",[->+<]."); // input the string
+
+        // bunf.set(?, Type::U32(0)) // set the program index to 0
+
+        // set up array index
+
+        // set up the array
+
+        // loop
+
+        //   index string
+
+        //   match char
+
+        //   execute instruction
+
+        //   if the end of the string is reached break
+    }
+
+    #[test]
+    fn str_index() {
+
+        let mut bunf = BunF::new();
+
+        bunf.input_str(0, "hello world").unwrap();
+
+        bunf.set(1, Type::U32(1)).unwrap();
+
+        bunf.index_str(0).unwrap();
+
+        assert!(bunf.test_run().unwrap())
+    }
+
+    #[test]
+    fn str_input() {
+
+        let mut bunf = BunF::new();
+
+        bunf.input_str(0, "hello").unwrap();
+
+        assert!(bunf.test_run().unwrap())
+
+    }
 
     #[test]
     fn i32_addition() {
