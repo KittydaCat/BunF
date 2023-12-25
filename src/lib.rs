@@ -1,6 +1,5 @@
 use crate::BunFError::TypeMismatch;
 use std::fmt::{Display, Formatter};
-use std::io::Read;
 
 use Type::EmptyCell as EC;
 
@@ -18,6 +17,7 @@ pub enum Type {
     Char(u8),
     String(Vec<u8>),
     IString(Vec<u8>),
+    Array(Vec<u32>),
     EmptyCell,
 }
 
@@ -35,7 +35,7 @@ impl Type{
             Type::Char(_) => {1}
             Type::String(val) => {val.len()*2 + 4}
             Type::EmptyCell => {1}
-            Type::IString(_) => {unimplemented!()}
+            Type::IString(_) | Type::Array(_) => {unimplemented!()}
         }
     }
 
@@ -122,6 +122,14 @@ impl Into<Vec<u32>> for &Type {
             .into_iter()
             .flatten()
             .collect(),
+            Type::Array(x) => [
+                vec![0_u32, 0_u32],
+                x.iter()
+                    .map(|val| [*val, 0_u32])
+                    .flatten()
+                    .collect(),
+                vec![0_u32, x.len() as u32],
+            ].into_iter().flatten().collect(),
             Type::EmptyCell => {
                 vec![0]
             }
@@ -138,7 +146,7 @@ impl From<&Type> for String {
             Type::Char(val) => (*val).to_string(),
             Type::String(val) => String::from_utf8(val.clone()).unwrap(),
             Type::IString(val) => String::from_utf8(val.clone()).unwrap(),
-            Type::EmptyCell => {unimplemented!()}
+            Type::EmptyCell | Type::Array(_) => {unimplemented!()}
         }
     }
 }
@@ -153,6 +161,7 @@ pub enum EmptyType {
     IString,
     EmptyCell,
     Any,
+    Array,
 }
 
 impl EmptyType {
@@ -170,6 +179,7 @@ impl From<&Type> for EmptyType {
             Type::Char(_) => EmptyType::Char,
             Type::String(_) => EmptyType::String,
             Type::IString(_) => EmptyType::IString,
+            Type::Array(_) => EmptyType::Array,
             Type::EmptyCell => EmptyType::EmptyCell,
         }
     }
@@ -380,7 +390,7 @@ impl BunF {
                 let str = match self.get(self.index) {
                     Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => ">",
                     Type::I32(_) => ">>",
-                    Type::String(_) | Type::IString(_) => ">>[>>]>>",
+                    Type::String(_) | Type::IString(_) | Type::Array(_) => ">>[>>]>>",
                 };
 
                 self.output.push_str(str); // dbg!(str, index).0);
@@ -392,7 +402,7 @@ impl BunF {
                 let str = match self.get(self.index - 1) {
                     Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => "<",
                     Type::I32(_) => "<<",
-                    Type::String(_)  | Type::IString(_) => "<<<<[<<]"
+                    Type::String(_)  | Type::IString(_) | Type::Array(_) => "<<<<[<<]"
                 };
 
                 self.output.push_str(str); //dbg!(str, index).0);
@@ -456,56 +466,59 @@ impl BunF {
                     return Err(TypeMismatch(vec![EEC], Vec::from(x)));
                 }
             }
-            Type::String(val) => {
-                let len = val.len() * 2 + 5;
-                let x = self.get_slice(index, len);
+            val @ (Type::String(_) | Type::IString(_) | Type::Array(_)) => {
+                let len = match &val {
+                    Type::String(x) | Type::IString(x) => x.len(),
+                    Type::Array(x) => x.len(),
+                    Type::EmptyCell | Type::Char(_) | Type::Bool(_) |
+                    Type::I32(_) | Type::U32(_) => unreachable!(),
+                } * 2 + 4;
+                let slice = self.get_slice(index, len);
                 let expected = (0..len).map(|_| EC).collect::<Vec<Type>>();
 
-                if x == expected {
-                    self.output.push_str(&format!(
-                        "{}>>>{}>\n",
-                        val.iter()
-                            .rev()
-                            .map(|char| format!(">>{}", "+".repeat(*char as usize)))
-                            .collect::<String>(), // add each char
-                        "+".repeat(val.len())
-                    ));
+                if slice == expected {
+                    self.output.push_str(
+                        &match &val {
+                            Type::String(x) | Type::IString(x) =>
+                                format!(
+                                    "{}>>>{}>\n",
+                                    x.iter()
+                                        .rev()
+                                        .map(|char| format!(">>{}", "+".repeat(*char as usize)))
+                                        .collect::<String>(), // add each char
+                                    "+".repeat(val.len())
+                                ),
+                            Type::Array(x) => format!(
+                                "{}>>>{}>\n",
+                                x.iter()
+                                    .rev()
+                                    .map(|index| format!(">>{}", "+".repeat(*index as usize)))
+                                    .collect::<String>(), // add each char
+                                "+".repeat(val.len())
+                            ),
+                            Type::EmptyCell | Type::Char(_) | Type::Bool(_) |
+                            Type::I32(_) | Type::U32(_) => unreachable!(),
+                        }
+                        // &format!(
+                        // "{}>>>{}>\n",
+                        // val.iter()
+                        //     .rev()
+                        //     .map(|char| format!(">>{}", "+".repeat(*char as usize)))
+                        //     .collect::<String>(), // add each char
+                        // "+".repeat(val.len()))
+                    );
                     (0..len).for_each(|_| {
                         self.array.remove(index);
                     });
-                    self.array.insert(index, Type::String(val));
+                    self.array.insert(index, val);
                 } else {
                     return Err(TypeMismatch(
                         expected.iter().map(|_| EEC).collect(),
-                        Vec::from(x),
+                        Vec::from(slice),
                     ));
                 }
             }
-            Type::IString(val) => {
-                let len = val.len() * 2 + 5;
-                let x = self.get_slice(index, len);
-                let expected = (0..len).map(|_| EC).collect::<Vec<Type>>();
 
-                if x == expected {
-                    self.output.push_str(&format!(
-                        "{}>>>{}>\n",
-                        val.iter()
-                            .rev()
-                            .map(|char| format!(">>{}", "+".repeat(*char as usize)))
-                            .collect::<String>(), // add each char
-                        "+".repeat(val.len())
-                    ));
-                    (0..len).for_each(|_| {
-                        self.array.remove(index);
-                    });
-                    self.array.insert(index, Type::IString(val));
-                } else {
-                    return Err(TypeMismatch(
-                        expected.iter().map(|_| EEC).collect(),
-                        Vec::from(x),
-                    ));
-                }
-            }
             Type::EmptyCell => {
                 todo!() // ?
             }
@@ -540,8 +553,8 @@ impl BunF {
 
                 self.index += len-1;
             }
-            Type::EmptyCell | Type::IString(_)=> {
-                //     Todo?
+            Type::EmptyCell | Type::IString(_) | Type::Array(_) => {
+                unimplemented!() //     Todo?
             }
         };
     }
@@ -638,7 +651,7 @@ impl BunF {
 
             }
 
-            Type::String(_) | Type::EmptyCell=> {unimplemented!()}
+            Type::String(_) | Type::EmptyCell | Type::Array(_) => {unimplemented!()}
         }
 
         Ok(())
@@ -670,6 +683,17 @@ impl BunF {
 
         Ok(())
 
+    }
+
+    pub fn array_append(&mut self, index: usize, value: u32) -> Result<(), BunFError> {
+
+        self.move_to(index + 1);
+
+        let found = self.get_slice(index, 2);
+
+        if let [Type::Array()]
+
+        Ok(())
     }
 }
 
