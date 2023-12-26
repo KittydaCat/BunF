@@ -33,6 +33,7 @@ while program_index < program.len() {
         ']' => {
             if array[array_index] > 1 {
                 let bracket_count = 1;
+
                 while bracket_count {
                     program_index -= 1;
 
