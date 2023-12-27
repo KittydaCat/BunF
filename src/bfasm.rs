@@ -1,9 +1,10 @@
-use crate::bfasm::BunFError::TypeMismatch;
 use std::fmt::{Display, Formatter};
+
 
 use Type::EmptyCell as EC;
 
 use EmptyType::EmptyCell as EEC;
+use crate::bfasm::BunFError::TypeMismatch;
 
 mod bf;
 
@@ -11,30 +12,15 @@ mod bf;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    U32(U32),
-    I32(I32),
-    Bool(Bool),
-    Char(Char),
-    String(FString),
-    IString(IString),
-    Array(Array),
+    U32(u32),
+    I32(i32),
+    Bool(bool),
+    Char(u8),
+    String(Vec<u8>),
+    IString(Vec<u8>),
+    Array(Vec<u32>),
     EmptyCell,
 }
-
-#[derive(Copy, Clone, Debug)]
-struct U32 {value: u32}
-#[derive(Copy, Clone, Debug)]
-struct I32 {value: i32}
-#[derive(Copy, Clone, Debug)]
-struct Bool {value: bool}
-#[derive(Copy, Clone, Debug)]
-struct Char {value: u8}
-#[derive(Clone, Debug)]
-struct FString {value: Vec<u8>}
-#[derive(Clone, Debug)]
-struct IString {value: Vec<u8>}
-#[derive(Clone, Debug)]
-struct Array {value: Vec<u32>}
 
 impl Type{
 
@@ -61,19 +47,19 @@ impl Type{
 
 impl From<u32> for Type {
     fn from(value: u32) -> Self {
-        Self::U32(U32{value})
+        Self::U32(value)
     }
 }
 
 impl From<i32> for Type {
     fn from(value: i32) -> Self {
-        Self::I32(I32{value})
+        Self::I32(value)
     }
 }
 
 impl From<bool> for Type {
     fn from(value: bool) -> Self {
-        Self::Bool(Bool{value})
+        Self::Bool(value)
     }
 }
 
@@ -81,7 +67,7 @@ impl From<char> for Type {
     fn from(value: char) -> Self {
         assert!(value.is_ascii());
 
-        Self::Char(Char{value: value as u8})
+        Self::Char(value as u8)
     }
 }
 
@@ -106,26 +92,26 @@ impl From<&[u8]> for Type{
             "String contained null bytes"
         );
 
-        Self::String(FString{value: Vec::from(value)})
+        Self::String(Vec::from(value))
     }
 }
 
 impl Into<Vec<u32>> for &Type {
     fn into(self) -> Vec<u32> {
         match self {
-            Type::U32(U32{value: x}) => {
+            Type::U32(x) => {
                 vec![*x]
             }
-            Type::I32(I32{value: x}) => {
+            Type::I32(x) => {
                 vec![x.is_negative() as u32, x.abs() as u32]
             }
-            Type::Bool(Bool{value: x}) => {
+            Type::Bool(x) => {
                 vec![*x as u32]
             }
-            Type::Char(Char{value: x}) => {
+            Type::Char(x) => {
                 vec![*x as u32]
             }
-            Type::String(FString{value: x}) | Type::IString(IString{value: x}) => [
+            Type::String(x) | Type::IString(x) => [
                 vec![0_u32, 0_u32],
                 x.iter()
                     .rev()
@@ -134,10 +120,10 @@ impl Into<Vec<u32>> for &Type {
                     .collect(),
                 vec![0_u32, x.len() as u32],
             ]
-            .into_iter()
-            .flatten()
-            .collect(),
-            Type::Array(Array{value: x}) => [
+                .into_iter()
+                .flatten()
+                .collect(),
+            Type::Array(x) => [
                 vec![0_u32, 0_u32],
                 x.iter()
                     .map(|val| [*val + 1, 0_u32])
@@ -152,17 +138,16 @@ impl Into<Vec<u32>> for &Type {
     }
 }
 
-// used for how inputted values will be received
 impl From<&Type> for String {
     fn from(value: &Type) -> Self {
         match value {
-            Type::U32(U32{value: val}) => (*val).to_string(),
-            Type::I32(I32{value: val}) => (*val).to_string(),
-            Type::Bool(Bool{value: val}) => String::from(if *val {'t'} else {'f'}),
-            Type::Char(Char{value: val}) => (*val).to_string(),
-            Type::String(FString{value: val}) => String::from_utf8(val.clone()).unwrap(),
-            Type::IString(IString{value: val}) => String::from_utf8(val.clone()).unwrap(),
-            Type::EmptyCell | Type::Array(Array{value: val}) => {unimplemented!()}
+            Type::U32(val) => (*val).to_string(),
+            Type::I32(val) => (*val).to_string(),
+            Type::Bool(val) => String::from(if *val {'t'} else {'f'}),
+            Type::Char(val) => (*val).to_string(),
+            Type::String(val) => String::from_utf8(val.clone()).unwrap(),
+            Type::IString(val) => String::from_utf8(val.clone()).unwrap(),
+            Type::EmptyCell | Type::Array(_) => {unimplemented!()}
         }
     }
 }
@@ -322,7 +307,7 @@ impl BunF {
 
         // make all i32 -0 -> 0
         for (index, val) in self.array.iter().enumerate() {
-            if let Type::I32(I32{value:0}) = val {
+            if let Type::I32(0) = val {
                 found[Type::len_slice(&self.array[0..index])] = 0;
             }
         }
@@ -439,7 +424,7 @@ impl BunF {
         // if self.array.len() <= index {return Err(BunFError::InvalidIndex(index));}
 
         match item {
-            Type::U32(U32{value: val}) => {
+            Type::U32(val) => {
                 let x = self.get_slice(index, 1);
                 if x == [EC] {
                     self.array[index] = Type::U32(val);
