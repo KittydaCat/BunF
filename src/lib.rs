@@ -21,30 +21,72 @@ impl Type for Array{}
 
 impl Type for (){}
 
-impl Sized for dyn Type{}
+
+struct Var<T: Type + ?Sized>{
+    phantom: PhantomData<T>,
+    num: usize,
+}
+struct Assign<T: Type + ?Sized>(pub Option<Var<T>>, pub Block<T> );
+
+enum Return<Return>{
+    Block(Block<Return>),
+    Var(Var<Return>),
+    Function(Function<Return>),
+}
+
+struct Function<Return>{
+    signature: Vec<dyn Type>,
+
+}
+
+enum Statement<Return: Type + ?Sized> {
+    IfElse(Block<Bool>, Block<()>, Block<()>),
+    While(Block<Bool>, Block<()>),
+    Match(Match<dyn Type>),
+    Assign(Assign<dyn Type>),
+    Return(Return<Return>),
+}
+
+struct Match<Item: Type + ?Sized>(pub Block<Item>, pub Vec<MatchClause<Item>>);
+
+struct MatchClause<Item: ?Sized> {
+    item: Box<Item>,
+    block: Block<()>,
+}
 
 struct Block<Return: Type + ?Sized> {
-    statements : Vec<Statements<dyn Type>>,
+    statements : Vec<Statement<dyn Type>>,
     return_type: PhantomData<Return>
 }
 
-struct Var<T: Type>{
-    phantom: PhantomData<T>,
-}
-struct Assign<T: Type>(pub Option<Var<T>>,pub Block<T> );
+impl<Return: Type> Block<Return> {
 
-enum Statements <Return: Type  + ?Sized> {
-    IfElse(Block<Bool>, Block<Return>, Block<Return>),
-    While(Block<Bool>, Block<()>),
-    Match(Match<Return, dyn Type>),
-    Assign(Assign<dyn Type>),
+    fn run(&self, vars: &mut Vec<Box<dyn Type>>) -> Return {
+
+        self.statements.iter()
+
+    }
 }
 
-struct Match<Return: Type, Item: Type + ?Sized>(pub Block<Item>, pub Vec<MatchClause<Item, Return>>);
+impl<Return: Type> Statement<Return> {
 
-struct MatchClause<Item, Return: Type> {
-    item: Item,
-    block: Block<Return>,
+    fn run(&self, vars: &mut Vec<Box<dyn Type>>) -> Return {
+        match self{
+            Statement::IfElse(cond, _, _) => {}
+            Statement::While(cond, _) => {}
+            Statement::Match(Match(item, condition)) => {}
+            Statement::Assign(_) => {}
+            Statement::Return(_) => {}
+        }
+    }
+
 }
 
-pub fn parse() {}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn var_parse() {
+    }
+}
