@@ -21,6 +21,7 @@ struct Function (
 enum Value {
     Var(Variable),
     Func(Function),
+    StaticValue(Type)
 }
 
 #[derive(Debug)]
@@ -64,7 +65,7 @@ fn next_word(iter: &mut Enumerate<Chars>) -> Option<(String, (usize, char))> {
 
     while let Some((index, char)) = iter.next() {
 
-        if char.is_alphanumeric() {
+        if char.is_alphanumeric() || char == '_' {
             str.push(char);
         } else {
             return Some((str, (index, char)));
@@ -75,6 +76,30 @@ fn next_word(iter: &mut Enumerate<Chars>) -> Option<(String, (usize, char))> {
 
 }
 
+fn skip_while(iter: &mut Enumerate<Chars>, chars: &[char]) -> Option<(usize, char)> {
+
+    'main: loop{
+
+        let (index, char) = iter.next()?;
+
+        let mut flag = false;
+
+        'char_loop: for skipped_char in chars {
+
+            if *skipped_char == char {
+
+                flag = true;
+
+                break 'char_loop
+            }
+        };
+
+        if !flag {
+            break 'main Some((index, char))
+        };
+    }
+}
+
 // found _ or nothing, expected _
 // struct TokenizeError(usize, Option<char>, String);
 
@@ -83,15 +108,15 @@ fn tokenize(code: &str) -> Result<Vec<Statement>, Option<usize>> {
 
     let mut char_iter = code.chars().enumerate();
 
-    let mut token = String::new();
-
-    let mut building_token = String::new;
+    // let mut token = String::new();
+    //
+    // let mut building_token = String::new;
 
     let mut tokens = Vec::new();
 
     loop{
 
-        let (str, (index, char)) = next_word(&mut char_iter).ok_or(None)?;
+        let Some((str, (index, char))) = next_word(&mut char_iter) else {break};
 
         match str.as_str() {
 
@@ -100,17 +125,20 @@ fn tokenize(code: &str) -> Result<Vec<Statement>, Option<usize>> {
                     return Err(Some(index))
                 }
 
-                let (var_name, (_, mut char)) = next_word(&mut char_iter).ok_or(None)?;
+                let (mut var_name, (mut index, mut char)) = next_word(&mut char_iter).ok_or(None)?;
 
-                while char != '='{
-                    (_, char) = char_iter.next().ok_or(None)?;
-                };
+                if var_name.as_str() == "mut" {
 
-                let value_char  = loop {
-                    let (_, char) = char_iter.next().ok_or(None)?;
+                    if char != ' ' {
+                        return Err(Some(index))
+                    }
 
-                    if char == ' ' {continue} else {break char}
-                };
+                    (var_name, (index, char)) = next_word(&mut char_iter).ok_or(None)?;
+
+                }
+
+                let (index, value_char) = skip_while(&mut char_iter, &[' ']).ok_or(None)?;
+
 
                 let (mut value_name, (_, char)) = next_word(&mut char_iter).ok_or(None)?;
 
