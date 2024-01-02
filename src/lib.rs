@@ -3,26 +3,32 @@ mod program;
 
 use crate::bfasm::{EmptyType, Type};
 
-struct Variable {
-    value: Type,
-}
+#[derive(Debug)]
+struct Variable (
+    String,
+    // value: Type,
+);
 
 
 // the last type is the return value
+#[derive(Debug)]
 struct Function (
     Vec<EmptyType>,
     Vec<Statement>
 );
 
+#[derive(Debug)]
 enum Value {
     Var(Variable),
     Func(Function),
 }
 
+#[derive(Debug)]
 enum Statement{
     Match(Value, Vec<(Type, Vec<Statement>)>),
     While(Value, Vec<Statement>),
     Function(Function, Vec<Value>),
+    Assignment(Variable, Value)
     // Return(Value),
 }
 
@@ -106,13 +112,12 @@ fn tokenize(code: &str) -> Result<Vec<Statement>, Option<usize>> {
                     if char == ' ' {continue} else {break char}
                 };
 
-                let (value_name, (_, char)) = next_word(&mut char_iter).ok_or(None)?;
+                let (mut value_name, (_, char)) = next_word(&mut char_iter).ok_or(None)?;
 
                 if char == ';'{
-
+                    value_name.insert(0, value_char);
+                    tokens.push(Statement::Assignment(Variable(var_name), Value::Var(Variable(value_name))));
                 }
-
-
             },
             _ => {}
         }
@@ -127,6 +132,22 @@ fn tokenize(code: &str) -> Result<Vec<Statement>, Option<usize>> {
 mod tests {
     use std::fs;
     use super::*;
+
+    # [test]
+    fn let_to_ast(){
+        let code = "let a = 100;\
+        let b = 90;\
+        let c = a;";
+
+        let x = tokenize(code);
+
+        if let Ok(ref tree) = x {
+            println!("{:?}", tree)
+        }
+        if let Err(num) = x {
+            println!("{:?}", num)
+        }
+    }
 
     # [test]
     fn program(){
