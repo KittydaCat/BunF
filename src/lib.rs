@@ -1,26 +1,27 @@
 mod bfasm;
 mod program;
 
+use std::hint::unreachable_unchecked;
 use crate::bfasm::{EmptyType, Type};
 
-#[derive(Debug)]
-struct Variable (
-    String,
-    // value: Type,
-);
+// #[derive(Debug)]
+// struct Variable (
+//     String,
+//     // value: Type,
+// );
 
 
 // the last type is the return value
-#[derive(Debug)]
-struct Function (
-    Vec<EmptyType>,
-    Vec<Statement>
-);
+// #[derive(Debug)]
+// struct Function (
+//     Vec<EmptyType>,
+//     Vec<Statement>
+// );
 
 #[derive(Debug)]
 enum Value {
-    Var(Variable),
-    Func(Function),
+    Var(String),
+    Func(String, Vec<Value>),
     StaticValue(Type)
 }
 
@@ -28,34 +29,114 @@ enum Value {
 enum Statement{
     Match(Value, Vec<(Type, Vec<Statement>)>),
     While(Value, Vec<Statement>),
-    Function(Function, Vec<Value>),
-    Assignment(Variable, Value)
+    Function(String, Vec<Value>),
+    Assignment(String, Value)
     // Return(Value),
 }
 
-// enum Token{
-//     Let,
-//     Equal,
-//     DoubleEqual,
-//     PlusEquals,
-//     MinusEquals,
-//     SemiColon,
-//     OpenBrace,
-//     CloseBrace,
-//     Name(String),
-//     Value(Type),
-//     While,
-//     If,
-//     Else,
-//     Match,
-//     Arrow,
-//     GreaterThan,
-//     LessThan,
-//     Comma,
-//     FunctionCall(String)
-// }
+#[derive(Debug)]
+enum Token {
+    Let,
+    Equal,
+    // DoubleEqual,
+    // PlusEquals,
+    // MinusEquals,
+    SemiColon,
+    OpenBrace,
+    CloseBrace,
+    While,
+    If,
+    Else,
+    Match,
+    // Arrow,
+    GreaterThan,
+    LessThan,
+    Comma,
+    OpenParens,
+    CloseParens,
+    Name(String),
+    Dot,
+    OpenBracket,
+    CloseBracket,
+    SingleQuote,
+    Plus,
+    Minus,
+    Mut,
+}
+
 use std::iter::Enumerate;
 use std::str::Chars;
+// at _ found (_ or nothing), expected _
+// struct TokenizeError(usize, Option<char>, String);
+
+// either returns the tokens or the point of failure
+fn tokenize(code: &str) -> Option<Vec<Token>> {
+
+    let mut char_iter = code.chars().enumerate();
+
+    let mut tokens = Vec::new();
+
+    loop {
+
+        let Some((mut str, (_, mut char))) = next_word(&mut char_iter)
+            else {return Some(tokens)};
+
+        if str != "" {
+
+            tokens.push(
+
+                match str.as_str() {
+
+                    "let" => Token::Let,
+                    "while" => Token::While,
+                    "if" => Token::If,
+                    "else" => Token::Else,
+                    "match" => Token::Match,
+                    "mut" => Token::Mut,
+                    str => Token::Name(String::from(str)),
+                }
+            );
+        }
+        if char != ' ' && char != '\n' && char != '\r'{
+            tokens.push(
+                match char{
+                    '=' => Token::Equal,
+                    ';' => Token::SemiColon,
+                    '{' => Token::OpenBrace,
+                    '}' => Token::CloseBrace,
+                    '<' => Token::LessThan,
+                    '>' => Token::GreaterThan,
+                    ',' => Token::Comma,
+                    '(' => Token::OpenParens,
+                    ')' => Token::CloseParens,
+                    '[' => Token::OpenBracket,
+                    ']' => Token::CloseBracket,
+                    '\'' => {
+                        let mut quote = String::new();
+
+                        loop{
+
+                            let source_quote = char_iter.next()?.1;
+
+                            if source_quote == '\'' {
+                                break
+                            }
+
+                            quote.push(source_quote);
+
+                        }
+
+                        Token::Name(format!("'{}'", quote))
+                    },
+                    '+' => Token::Plus,
+                    '-' => Token::Minus,
+                    '.' => Token::Dot,
+                    x => {dbg!(x); todo!()},
+                }
+            );
+        }
+    }
+}
 
 // returns a alphanumeric string and the non alphanumeric or None if the iter was ended before an
 // non alphanumeric char was found
@@ -76,90 +157,121 @@ fn next_word(iter: &mut Enumerate<Chars>) -> Option<(String, (usize, char))> {
 
 }
 
-fn skip_while(iter: &mut Enumerate<Chars>, chars: &[char]) -> Option<(usize, char)> {
+fn to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
 
-    'main: loop{
+    use Token as T;
 
-        let (index, char) = iter.next()?;
+    let mut index = 0;
 
-        let mut flag = false;
-
-        'char_loop: for skipped_char in chars {
-
-            if *skipped_char == char {
-
-                flag = true;
-
-                break 'char_loop
-            }
-        };
-
-        if !flag {
-            break 'main Some((index, char))
-        };
-    }
-}
-
-// found _ or nothing, expected _
-// struct TokenizeError(usize, Option<char>, String);
-
-// either returns the tokens or the point of failure
-fn tokenize(code: &str) -> Result<Vec<Statement>, Option<usize>> {
-
-    let mut char_iter = code.chars().enumerate();
-
-    // let mut token = String::new();
-    //
-    // let mut building_token = String::new;
-
-    let mut tokens = Vec::new();
+    let mut statements = Vec::new();
 
     loop{
 
-        let Some((str, (index, char))) = next_word(&mut char_iter) else {break};
+        let Some(current_token) = tokens.get(index) else {
+            return Ok(statements)
+        };
 
-        match str.as_str() {
+        match current_token {
+            Token::Let => {
 
-            "let" => {
-                if char != ' ' {
-                    return Err(Some(index))
-                }
+                // let _ = _;
+                if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = tokens[index..index+5] {
 
-                let (mut var_name, (mut index, mut char)) = next_word(&mut char_iter).ok_or(None)?;
 
-                if var_name.as_str() == "mut" {
+                    statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
 
-                    if char != ' ' {
-                        return Err(Some(index))
+                    index += 5;
+
+                } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = tokens[index..index+6] {
+
+                    statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
+
+                    index += 6;
+
+                } else if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref func_str),
+                T::OpenParens | T::OpenBrace] = tokens[index..index+5] {
+
+                    index += 5;
+
+                    if let T::CloseParens | T::CloseBrace = tokens[index] {
+                        statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![])));
+                        index += 2;
+                    } else if let [T::Name(ref val), T::CloseParens | T::CloseBrace] = tokens[index..index+2] {
+                        statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![str_to_value(val)])));
+                        index += 3;
+                    } else {
+                        todo!()
                     }
-
-                    (var_name, (index, char)) = next_word(&mut char_iter).ok_or(None)?;
-
-                }
-
-                let (index, value_char) = skip_while(&mut char_iter, &[' ']).ok_or(None)?;
+                } else {todo!()}
+            }
 
 
-                let (mut value_name, (_, char)) = next_word(&mut char_iter).ok_or(None)?;
-
-                if char == ';'{
-                    value_name.insert(0, value_char);
-                    tokens.push(Statement::Assignment(Variable(var_name), Value::Var(Variable(value_name))));
-                }
-            },
-            _ => {}
-        }
+            _ => {unreachable!()}
+        };
 
     }
-
-    Ok(tokens)
-
 }
 
+// returns a static Type if the str is parseable as a type otherwise returns a var as the str
+fn str_to_value(str: &str) -> Value{
+    if let Some(bf_type) = str_to_type(str) {
+        Value::StaticValue(bf_type)
+    } else {
+        Value::Var(String::from(str))
+    }
+}
+
+fn str_to_type(value: &str) -> Option<Type> {
+
+    match value.chars().next()? {
+        '\'' => {
+
+            if value.chars().count() != 3 {
+                return None
+            };
+
+            Some(Type::Char(value.chars().nth(1)? as u8))
+        },
+        _ => {
+            Some(Type::U32(value.parse().ok()?))
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use std::fs;
     use super::*;
+
+    # [test]
+    fn program(){
+        let file = fs::read_to_string("./src/program.rs").unwrap();
+
+        let file = &file[file.find("fn main()").unwrap()..];
+
+        let tokens = tokenize(file);
+
+        println!("{:?}", tokens)
+    }
+
+    #[test]
+    fn let_w_func(){
+        let code = "let a = f();\
+        let b = array[array_index];\
+        let mut c = a;";
+
+        // println!("{:?}", tokenize(code).unwrap());
+
+        println!("{:?}", to_statements(&tokenize(code).unwrap()).unwrap());
+    }
+
+    # [test]
+    fn let_to_statements(){
+        let code = "let a = 100;\
+        let b = 90;\
+        let mut c = a;";
+
+        println!("{:?}", to_statements(&tokenize(code).unwrap()).unwrap())
+    }
 
     # [test]
     fn let_to_ast(){
@@ -169,20 +281,6 @@ mod tests {
 
         let x = tokenize(code);
 
-        if let Ok(ref tree) = x {
-            println!("{:?}", tree)
-        }
-        if let Err(num) = x {
-            println!("{:?}", num)
-        }
-    }
-
-    # [test]
-    fn program(){
-        let file = fs::read_to_string("./src/program.rs").unwrap();
-
-        let program = file.chars();
-
-        println!("Token {}", program.take_while(|x| x.is_alphanumeric()).collect::<String>());
+        println!("{:?}", x)
     }
 }
