@@ -1,7 +1,6 @@
 mod bfasm;
 mod program;
 
-use std::hint::unreachable_unchecked;
 use crate::bfasm::{EmptyType, Type};
 
 // #[derive(Debug)]
@@ -175,41 +174,56 @@ fn to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
             Token::Let => {
 
                 // let _ = _;
-                if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = tokens[index..index+5] {
+                if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+5]) {
 
 
                     statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
 
                     index += 5;
 
-                } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = tokens[index..index+6] {
+                } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+6]) {
 
                     statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
 
                     index += 6;
 
                 } else if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref func_str),
-                T::OpenParens | T::OpenBrace] = tokens[index..index+5] {
+                T::OpenParens | T::OpenBracket] = dbg!(&tokens[index..index+5]) {
 
                     index += 5;
 
-                    if let T::CloseParens | T::CloseBrace = tokens[index] {
+                    if let T::CloseParens | T::CloseBracket = tokens[index] {
                         statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![])));
                         index += 2;
-                    } else if let [T::Name(ref val), T::CloseParens | T::CloseBrace] = tokens[index..index+2] {
+                    } else if let [T::Name(ref val), T::CloseParens | T::CloseBracket] = tokens[index..index+2] {
                         statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![str_to_value(val)])));
                         index += 3;
                     } else {
                         todo!()
                     }
-                } else {todo!()}
+                } else {
+                    todo!()
+                }
             }
 
+            Token::While => {
+
+                let starting_index = index;
+            }
 
             _ => {unreachable!()}
         };
 
     }
+}
+
+fn to_value(tokens: &[Token]) -> Value {
+
+    let index = 1;
+
+    let Token::Name(ref str) = tokens[index - 1];
+
+    if let Token::OpenBracket | Token::OpenParens
 }
 
 // returns a static Type if the str is parseable as a type otherwise returns a var as the str
