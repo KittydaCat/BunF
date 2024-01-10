@@ -33,7 +33,7 @@ enum Statement{
     // Return(Value),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum Token {
     Let,
     Equal,
@@ -63,8 +63,49 @@ enum Token {
     Mut,
 }
 
+impl From<&Token> for String {
+    fn from(value: &Token) -> Self {
+        String::from(Token::to_str(value))
+    }
+}
+
+impl Token {
+    fn to_str(token: &Token) -> &str {
+        match token {Token::Let => {"let"}
+            Token::Equal => {"="}
+            Token::SemiColon => {";"}
+            Token::OpenBrace => {"{"}
+            Token::CloseBrace => {"}"}
+            Token::While => {"while"}
+            Token::If => {"if"}
+            Token::Else => {"else"}
+            Token::Match => {"match"}
+            Token::GreaterThan => {">"}
+            Token::LessThan => {"<"}
+            Token::Comma => {","}
+            Token::OpenParens => {"("}
+            Token::CloseParens => {")"}
+            Token::Name(_) => {todo!()}
+            Token::Dot => {"."}
+            Token::OpenBracket => {"{"}
+            Token::CloseBracket => {"}"}
+            Token::SingleQuote => {"'"}
+            Token::Plus => {"+"}
+            Token::Minus => {"-"}
+            Token::Mut => {"mut"}}
+    }
+}
+
+// impl Token {
+//
+//     fn as_str(tokens: &[Token]) -> String {
+//         tokens.iter().map(<&Token as Into<&str>>::into).collect()
+//     }
+// }
+
 use std::iter::Enumerate;
 use std::str::Chars;
+use crate::Statement::Assignment;
 // at _ found (_ or nothing), expected _
 // struct TokenizeError(usize, Option<char>, String);
 
@@ -161,6 +202,7 @@ fn to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
     use Token as T;
 
     let mut index = 0;
+    let mut starting_index = 0;
 
     let mut statements = Vec::new();
 
@@ -173,37 +215,46 @@ fn to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
         match current_token {
             Token::Let => {
 
-                // let _ = _;
-                if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+5]) {
+                if let [T::Let, T::Name(ref var), T::Equal] = dbg!(&tokens[index..index+3]) {
+                    index += 3;
+                    starting_index = index;
 
+                    while tokens[index-1] != Token::SemiColon{index+=1};
 
-                    statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
-
-                    index += 5;
-
-                } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+6]) {
-
-                    statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
-
-                    index += 6;
-
-                } else if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref func_str),
-                T::OpenParens | T::OpenBracket] = dbg!(&tokens[index..index+5]) {
-
-                    index += 5;
-
-                    if let T::CloseParens | T::CloseBracket = tokens[index] {
-                        statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![])));
-                        index += 2;
-                    } else if let [T::Name(ref val), T::CloseParens | T::CloseBracket] = tokens[index..index+2] {
-                        statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![str_to_value(val)])));
-                        index += 3;
-                    } else {
-                        todo!()
-                    }
-                } else {
-                    todo!()
+                    statements.push(Assignment(var.clone(), tokens_to_value(&tokens[starting_index..index]).unwrap()))
                 }
+
+                // // let _ = _;
+                // if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+5]) {
+                //
+                //
+                //     statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
+                //
+                //     index += 5;
+                //
+                // } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+6]) {
+                //
+                //     statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
+                //
+                //     index += 6;
+                //
+                // } else if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref func_str),
+                // T::OpenParens | T::OpenBracket] = dbg!(&tokens[index..index+5]) {
+                //
+                //     index += 5;
+                //
+                //     if let T::CloseParens | T::CloseBracket = tokens[index] {
+                //         statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![])));
+                //         index += 2;
+                //     } else if let [T::Name(ref val), T::CloseParens | T::CloseBracket] = tokens[index..index+2] {
+                //         statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![str_to_value(val)])));
+                //         index += 3;
+                //     } else {
+                //         todo!()
+                //     }
+                // } else {
+                //     todo!()
+                // }
             }
 
             Token::While => {
@@ -217,13 +268,60 @@ fn to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
     }
 }
 
-fn to_value(tokens: &[Token]) -> Value {
+fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
 
-    let index = 1;
+    let mut index = 2;
 
-    let Token::Name(ref str) = tokens[index - 1];
+    let Token::Name(ref str) = tokens[0] else {
+        todo!();
+        return None
+    };
 
-    if let Token::OpenBracket | Token::OpenParens
+    let val = match tokens.get(1) {
+        None => {
+            return Some(str_to_value(str));
+        }
+        Some(Token::OpenBracket) => {
+            while *tokens.get(index-1).unwrap() != Token::CloseBracket {index += 1;};
+            Value::Func(
+                String::from("[]"),
+                vec![Value::Var(str.clone()),
+                     tokens_to_value(&tokens[2..index]).unwrap()]
+            )
+        }
+        Some(Token::OpenParens) => {
+            while *tokens.get(index-1).unwrap() != Token::CloseParens {index += 1;};
+            Value::Func(
+                str.clone(),
+                if index != 3 {
+                    Vec::from([tokens_to_value(&tokens[2..index]).unwrap()])
+                } else {Vec::new()}
+            )
+        }
+        Some(_) => {str_to_value(str)}
+    };
+
+    use Token as T;
+
+    let Some(operand) = tokens.get(index) else {
+        return Some(val);
+    };
+
+    Some(match operand {
+        oper @ (Token::GreaterThan | Token::LessThan) => {
+            Value::Func(String::from(oper), vec![val, tokens_to_value(&tokens[index+1..]).unwrap()])
+        }
+        Token::Equal => {
+            Value::Func(String::from("=="), vec![val, tokens_to_value(&tokens[index+2..]).unwrap()])
+        }
+
+        _ => {todo!()}
+        // oper @ ([T::GreaterThan, T::Equal] | [T::LessThan, T::Equal] | [T::Equal, T::Equal] | [T::]) => {
+        //     Value::Func(Token::into_str(oper), vec![val, tokens_to_value(&tokens[index+2..])?])
+        // }
+
+
+    })
 }
 
 // returns a static Type if the str is parseable as a type otherwise returns a var as the str
