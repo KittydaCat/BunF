@@ -57,7 +57,6 @@ enum Token {
     Dot,
     OpenBracket,
     CloseBracket,
-    SingleQuote,
     Plus,
     Minus,
     Mut,
@@ -89,7 +88,6 @@ impl Token {
             Token::Dot => {"."}
             Token::OpenBracket => {"{"}
             Token::CloseBracket => {"}"}
-            Token::SingleQuote => {"'"}
             Token::Plus => {"+"}
             Token::Minus => {"-"}
             Token::Mut => {"mut"}}
@@ -105,7 +103,7 @@ impl Token {
 
 use std::iter::Enumerate;
 use std::str::Chars;
-use crate::Statement::Assignment;
+use crate::Statement::{Assignment, While};
 // at _ found (_ or nothing), expected _
 // struct TokenizeError(usize, Option<char>, String);
 
@@ -197,7 +195,7 @@ fn next_word(iter: &mut Enumerate<Chars>) -> Option<(String, (usize, char))> {
 
 }
 
-fn to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
+fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
 
     use Token as T;
 
@@ -219,53 +217,73 @@ fn to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
                     index += 3;
                     starting_index = index;
 
-                    while tokens[index-1] != Token::SemiColon{index+=1};
+                    while tokens[index] != Token::SemiColon{
+                        index+=1
+                    };
 
-                    statements.push(Assignment(var.clone(), tokens_to_value(&tokens[starting_index..index]).unwrap()))
+                    dbg!(starting_index, index, &tokens);
+
+                    statements.push(Assignment(var.clone(), tokens_to_value(dbg!(&tokens[starting_index..index])).unwrap()));
+
+                    index += 1;
+                } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal] = dbg!(&tokens[index..index+4]){
+                    index += 4;
+                    starting_index = index;
+
+                    while tokens[index] != Token::SemiColon{
+                        index+=1
+                    };
+
+                    dbg!(starting_index, index, &tokens);
+
+                    statements.push(Assignment(var.clone(), tokens_to_value(dbg!(&tokens[starting_index..index])).unwrap()));
+
+                    index += 1;
                 }
-
-                // // let _ = _;
-                // if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+5]) {
-                //
-                //
-                //     statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
-                //
-                //     index += 5;
-                //
-                // } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal, T::Name(ref value_str), T::SemiColon] = dbg!(&tokens[index..index+6]) {
-                //
-                //     statements.push(Statement::Assignment(var.clone(), str_to_value(value_str)));
-                //
-                //     index += 6;
-                //
-                // } else if let [T::Let, T::Name(ref var), T::Equal, T::Name(ref func_str),
-                // T::OpenParens | T::OpenBracket] = dbg!(&tokens[index..index+5]) {
-                //
-                //     index += 5;
-                //
-                //     if let T::CloseParens | T::CloseBracket = tokens[index] {
-                //         statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![])));
-                //         index += 2;
-                //     } else if let [T::Name(ref val), T::CloseParens | T::CloseBracket] = tokens[index..index+2] {
-                //         statements.push(Statement::Assignment(var.clone(), Value::Func(String::from(func_str), vec![str_to_value(val)])));
-                //         index += 3;
-                //     } else {
-                //         todo!()
-                //     }
-                // } else {
-                //     todo!()
-                // }
             }
 
             Token::While => {
 
                 let starting_index = index;
+
+                while tokens[index] != Token::OpenBracket{
+                    index+=1
+                };
+
+                statements.push(While(tokens_to_value(&tokens[index..starting_index]).unwrap(), vec![]));
+                unimplemented!()
             }
 
             _ => {unreachable!()}
         };
 
     }
+}
+
+fn find_next_balanced(target: &Token, tokens: &[Token], mut index: usize) -> usize {
+
+    let inv_target = match target {
+
+        Token::OpenBrace => {Token::CloseBrace}
+        Token::OpenParens => {Token::CloseParens}
+        Token::OpenBracket => {Token::CloseBracket}
+        _ => {unimplemented!()}
+    };
+
+    let mut depth = 1;
+
+    while depth > 0{
+
+        index += 1; // move after if statements?
+
+        if tokens[index] == *target{
+            depth += 1;
+        } else if tokens[index] == inv_target{
+            depth -= 1;
+        }
+    }
+
+    index
 }
 
 fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
@@ -301,9 +319,11 @@ fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
         Some(_) => {str_to_value(str)}
     };
 
+    dbg!(&val);
+
     use Token as T;
 
-    let Some(operand) = tokens.get(index) else {
+    let Some(operand) = dbg!(tokens.get(index)) else {
         return Some(val);
     };
 
@@ -360,9 +380,30 @@ mod tests {
 
         let file = &file[file.find("fn main()").unwrap()..];
 
-        let tokens = tokenize(file);
+        let mut tokens = tokenize(file).unwrap();
 
-        println!("{:?}", tokens)
+        let statements = tokens_to_statements(&tokens[5..tokens.len()-1]).unwrap();
+
+        println!("{:?}\n{:?}", tokens, statements)
+    }
+
+    # [test]
+    fn program_test(){
+
+        use crate::program::*;
+
+        main()
+
+    }
+
+    #[test]
+    fn program_lets(){
+        let code = "let program = input_str();
+        let mut program_index = 0;
+        let mut array = new_array();
+        let mut array_index = 0;";
+
+        println!("{:?}", tokens_to_statements(&tokenize(code).unwrap()).unwrap());
     }
 
     #[test]
@@ -373,7 +414,7 @@ mod tests {
 
         // println!("{:?}", tokenize(code).unwrap());
 
-        println!("{:?}", to_statements(&tokenize(code).unwrap()).unwrap());
+        println!("{:?}", tokens_to_statements(&tokenize(code).unwrap()).unwrap());
     }
 
     # [test]
@@ -382,7 +423,7 @@ mod tests {
         let b = 90;\
         let mut c = a;";
 
-        println!("{:?}", to_statements(&tokenize(code).unwrap()).unwrap())
+        println!("{:?}", tokens_to_statements(&tokenize(code).unwrap()).unwrap())
     }
 
     # [test]

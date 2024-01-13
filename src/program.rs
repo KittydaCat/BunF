@@ -1,7 +1,7 @@
 use crate::program::bfstd::*;
 mod bfstd;
 
-fn main() {
+pub(crate) fn main() {
 
     let program = input_str();
 
