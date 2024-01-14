@@ -1,7 +1,8 @@
+#![allow(dead_code)]
 mod bfasm;
 mod program;
 
-use crate::bfasm::{EmptyType, Type};
+use crate::bfasm::{Type};
 
 // #[derive(Debug)]
 // struct Variable (
@@ -103,7 +104,6 @@ impl Token {
 
 use std::iter::Enumerate;
 use std::str::Chars;
-use crate::Statement::{Assignment, While};
 // at _ found (_ or nothing), expected _
 // struct TokenizeError(usize, Option<char>, String);
 
@@ -116,7 +116,7 @@ fn tokenize(code: &str) -> Option<Vec<Token>> {
 
     loop {
 
-        let Some((mut str, (_, mut char))) = next_word(&mut char_iter)
+        let Some((str, (_, char))) = next_word(&mut char_iter)
             else {return Some(tokens)};
 
         if str != "" {
@@ -200,7 +200,6 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
     use Token as T;
 
     let mut index = 0;
-    let mut starting_index = 0;
 
     let mut statements = Vec::new();
 
@@ -215,20 +214,22 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
 
                 if let [T::Let, T::Name(ref var), T::Equal] = dbg!(&tokens[index..index+3]) {
                     index += 3;
-                    starting_index = index;
+                    let starting_index = index;
 
                     while tokens[index] != Token::SemiColon{
                         index+=1
                     };
 
-                    dbg!(starting_index, index, &tokens);
-
-                    statements.push(Assignment(var.clone(), tokens_to_value(dbg!(&tokens[starting_index..index])).unwrap()));
+                    statements.push(
+                        Statement::Assignment(
+                            var.clone(),
+                            tokens_to_value(dbg!(&tokens[starting_index..index])).unwrap()
+                        ));
 
                     index += 1;
                 } else if let [T::Let, T::Mut, T::Name(ref var), T::Equal] = dbg!(&tokens[index..index+4]){
                     index += 4;
-                    starting_index = index;
+                    let starting_index = index;
 
                     while tokens[index] != Token::SemiColon{
                         index+=1
@@ -236,7 +237,10 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
 
                     dbg!(starting_index, index, &tokens);
 
-                    statements.push(Assignment(var.clone(), tokens_to_value(dbg!(&tokens[starting_index..index])).unwrap()));
+                    statements.push(
+                        Statement::Assignment(
+                            var.clone(),
+                            tokens_to_value(dbg!(&tokens[starting_index..index])).unwrap()));
 
                     index += 1;
                 }
@@ -244,22 +248,35 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
 
             Token::While => {
 
-                let starting_index = index;
+                let starting_index = index + 1; // move past the while token
 
-                while tokens[index] != Token::OpenBracket{
+                dbg!(index);
+                dbg!(&tokens);
+
+                while tokens[index] != Token::OpenBrace{
                     index+=1
                 };
 
-                statements.push(While(tokens_to_value(&tokens[index..starting_index]).unwrap(), vec![]));
-                unimplemented!()
+                let block_index = index;
+
+                index = find_next_balanced(&Token::OpenBrace, &tokens, index);
+
+                statements.push(Statement::While(
+                    tokens_to_value(dbg!(&tokens[starting_index..block_index])).unwrap(),
+                    tokens_to_statements(dbg!(&tokens[block_index+1..index])).unwrap() // remove the ending brace
+                ));
+
+                index += 1;
             }
 
-            _ => {unreachable!()}
+            token => {panic!("{:?}", token)}
         };
 
     }
 }
 
+// set index ahead of 1st instance of the value
+// the result will be the inverse of the token
 fn find_next_balanced(target: &Token, tokens: &[Token], mut index: usize) -> usize {
 
     let inv_target = match target {
@@ -288,40 +305,64 @@ fn find_next_balanced(target: &Token, tokens: &[Token], mut index: usize) -> usi
 
 fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
 
-    let mut index = 2;
+    let mut index = 1;
 
-    let Token::Name(ref str) = tokens[0] else {
+    let Token::Name(ref str) = dbg!(&tokens[0]) else {
+        dbg!(&tokens[0]);
         todo!();
-        return None
+        // return None
     };
 
-    let val = match tokens.get(1) {
+    let val = match dbg!(tokens.get(1)) {
         None => {
             return Some(str_to_value(str));
         }
         Some(Token::OpenBracket) => {
-            while *tokens.get(index-1).unwrap() != Token::CloseBracket {index += 1;};
+            while *tokens.get(index).unwrap() != Token::CloseBracket {index += 1;};
             Value::Func(
                 String::from("[]"),
                 vec![Value::Var(str.clone()),
-                     tokens_to_value(&tokens[2..index]).unwrap()]
+                     tokens_to_value(&tokens[2..index]).unwrap()] // if [] will panic
             )
         }
         Some(Token::OpenParens) => {
-            while *tokens.get(index-1).unwrap() != Token::CloseParens {index += 1;};
+            while *tokens.get(index).unwrap() != Token::CloseParens {index += 1;};
             Value::Func(
                 str.clone(),
-                if index != 3 {
+                if index != 2 {
                     Vec::from([tokens_to_value(&tokens[2..index]).unwrap()])
-                } else {Vec::new()}
+                } else {
+                    index += 1;
+                    Vec::new()
+                }
             )
+        }
+        Some(Token::Dot) => {
+
+            if let [Token::Name(ref func_name), Token::OpenParens] = &tokens[2..4] {
+
+                while *tokens.get(index).unwrap() != Token::CloseParens {index += 1;}
+
+                dbg!(index);
+
+                Value::Func(
+                    func_name.clone(),
+                    if index != 4{
+                        Vec::from([Value::Var(str.clone()), tokens_to_value(dbg!(&tokens[4..index])).unwrap()])
+                    } else {
+                        index += 1;
+                        Vec::from([Value::Var(str.clone())])
+                    }
+                )
+
+            } else {panic!()}
+
         }
         Some(_) => {str_to_value(str)}
     };
 
     dbg!(&val);
 
-    use Token as T;
 
     let Some(operand) = dbg!(tokens.get(index)) else {
         return Some(val);
@@ -329,13 +370,15 @@ fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
 
     Some(match operand {
         oper @ (Token::GreaterThan | Token::LessThan) => {
-            Value::Func(String::from(oper), vec![val, tokens_to_value(&tokens[index+1..]).unwrap()])
+            Value::Func(String::from(oper), vec![val, tokens_to_value(dbg!(&tokens[index+1..])).unwrap()])
         }
         Token::Equal => {
-            Value::Func(String::from("=="), vec![val, tokens_to_value(&tokens[index+2..]).unwrap()])
+            Value::Func(String::from("=="), vec![val, tokens_to_value(dbg!(&tokens[index+2..])).unwrap()])
         }
 
-        _ => {todo!()}
+
+
+        val => {panic!("{:?}", val);}
         // oper @ ([T::GreaterThan, T::Equal] | [T::LessThan, T::Equal] | [T::Equal, T::Equal] | [T::]) => {
         //     Value::Func(Token::into_str(oper), vec![val, tokens_to_value(&tokens[index+2..])?])
         // }
@@ -380,7 +423,7 @@ mod tests {
 
         let file = &file[file.find("fn main()").unwrap()..];
 
-        let mut tokens = tokenize(file).unwrap();
+        let tokens = tokenize(file).unwrap();
 
         let statements = tokens_to_statements(&tokens[5..tokens.len()-1]).unwrap();
 
@@ -397,11 +440,19 @@ mod tests {
     }
 
     #[test]
+    fn while_test(){
+        let code = "while program_index < program.len() {}";
+
+        println!("{:?}", tokens_to_statements(&tokenize(code).unwrap()).unwrap());
+    }
+
+    #[test]
     fn program_lets(){
         let code = "let program = input_str();
         let mut program_index = 0;
         let mut array = new_array();
-        let mut array_index = 0;";
+        let mut array_index = 0;
+        let x = program_index < program.len();";
 
         println!("{:?}", tokens_to_statements(&tokenize(code).unwrap()).unwrap());
     }

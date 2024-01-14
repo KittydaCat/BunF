@@ -9,6 +9,8 @@ pub(crate) fn main() {
 
     let mut array = new_array();
 
+    array.push(0);
+
     let mut array_index = 0;
 
     while program_index < program.len() {
@@ -59,4 +61,6 @@ pub(crate) fn main() {
             _ => {}
         }
     }
+
+    print_array(array);
 }
