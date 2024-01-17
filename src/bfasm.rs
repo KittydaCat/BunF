@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 use crate::bfasm::binterp::{BFError, run_bf};
 mod binterp;
@@ -226,6 +226,7 @@ pub enum BunFError {
     TypeMismatch(Vec<EmptyType>, Vec<Type>),
     InvalidIndex(usize),
     InvalidStringIndex(usize),
+    InvalidMatchArm(usize),
 }
 
 impl Display for BunFError {
@@ -236,6 +237,7 @@ impl Display for BunFError {
             }
             BunFError::InvalidIndex(index) => format!("Invalid array index of {index}"),
             BunFError::InvalidStringIndex(index) => format!("Invalid string index of {index}"),
+            _ => {todo!()}
         })
     }
 }
@@ -487,7 +489,7 @@ impl BunF {
                 let x = self.get_slice(index, 1);
                 if x == [EC] {
                     self.array[index] = Type::Bool(val);
-                    self.output.push_str(if val { "+>\n" } else { "\n" });
+                    self.output.push_str(if val { "+>\n" } else { ">\n" });
                 } else {
                     return Err(TypeMismatch(vec![EEC], Vec::from(x)));
                 }
@@ -594,7 +596,7 @@ impl BunF {
         };
     }
 
-    pub fn copy(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn copy_u32(&mut self, index: usize) -> Result<(), BunFError> {
 
         self.move_to(index);
 
@@ -903,6 +905,210 @@ impl BunF {
 
         Ok(())
     }
+
+    pub fn add_u32(&mut self, index: usize) -> Result<(), BunFError> {
+
+        self.move_to(index);
+
+        let slice = self.get_slice(index, 2);
+
+        if let [Type::U32(x), Type::U32(y)] = slice {
+            *x += *y;
+            self.array[index + 1] = EC;
+            self.output.push_str(">[-<+>]<");
+            Ok(())
+        } else {
+            Err(TypeMismatch(vec![EmptyType::U32, EmptyType::U32], Vec::from(slice)))
+        }
+    }
+
+    pub fn match_char(&mut self, index: usize,
+                      match_arms: &mut [(u8, Vec<Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>>)])
+        -> Result<(), BunFError> {
+
+        self.move_to(index);
+
+        // sort the match arms
+        match_arms.sort_by_key(|(char, _)| char.clone());
+
+        let slice = self.get_slice(index, 6);
+
+        if let [Type::Char(val), EC, EC, EC, EC, EC] = slice {
+
+            let val = *val;
+
+            let mut previous_cond = 0;
+
+            self.output.push_str(">>>>+<<");
+
+            // validate the arms
+            for (match_index, (cond, code)) in match_arms.iter_mut().enumerate() {
+
+                // correct the starting location
+                code.insert(0, Box::new(|bunf: &mut BunF| {bunf.index += 4; Ok(())}));
+
+                // after the func, move to the correct location to continue matching
+                let bunf_index = self.index.clone() + 5;
+                code.push(Box::new(move |bunf: &mut BunF|
+                    {bunf.move_to(bunf_index); Ok(())}
+                ));
+
+                let Some(str) = self.test_arm(code) else {
+                    return Err(BunFError::InvalidMatchArm(match_index));
+                };
+
+                if *cond == val{
+
+                    let output = self.output.clone();
+
+                    code.iter().for_each(|oper| oper(self)
+                        .expect("Any error should have been caught when validating"));
+
+                    self.output = output;
+
+                    self.index -= 2;
+                }
+
+                self.output.push_str(&"+".repeat((*cond - previous_cond) as usize));
+                self.output.push_str("[-<<[->]>]>>[<<<<[>]>>>>[");
+                self.output.push_str(&str);
+                self.output.push_str("]<<<");
+
+                previous_cond = *cond;
+            }
+
+            self.output.push_str(&"]".repeat(match_arms.len()));
+            self.output.push_str(">[<]>[-]<<[-]<<[-]");
+
+            self.index = index;
+
+            self.array[index] = EC;
+
+
+            // +++++
+            //     >>>>+<<
+            //     (+++) [-<<[->]>]>>[<<<<[>]>>>>[>func1>,.<]<<<
+            // (++) [-<<[->]>]>>[<<<<[>]>>>>[>func1>,.<]<<<
+            // (+++)[-<<[->]>]>>[<<<<[>]>>>>[>func1>,.<]<<<]
+            // ]
+            // ]>[<]<<<
+
+            // +++++
+            //     >>>>+<<
+            //     (+++) [-<<[->]>]>>[<<<<[>]>>>>[>func1>,.<]<<<
+            // (++) [-<<[->]>]>>[<<<<[>]>>>>[>func1>,.<]<<<]
+            // ]>[<]<<<
+
+        } else{
+            return Err(TypeMismatch(vec![EmptyType::Char, EEC, EEC, EEC, EEC, EEC], Vec::from(slice)))
+        }
+
+        Ok(())
+    }
+
+    fn test_arm(&self, code: &[Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>]) -> Option<String> {
+
+        let mut bunf = BunF{
+            array: self.array.clone(),
+            output: "".to_string(),
+            index: self.index,
+            expected_input: self.expected_input.clone(),
+            expected_output: self.expected_output.clone(),
+        };
+
+        for oper in code{
+            oper(&mut bunf).ok()?;
+        }
+
+        if EmptyType::from_vec(&self.array) == EmptyType::from_vec(&bunf.array){
+            Some(bunf.output)
+        } else {None}
+
+    }
+    
+    fn bool_if(&mut self, index: usize,
+               mut code: Vec<Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>>) -> Result<(), BunFError> {
+        
+        self.move_to(index);
+        
+        let slice = self.get(index);
+        
+        if let Type::Bool(cond) = slice {
+
+            let cond = *cond;
+
+            // after the func, move to the correct location to continue matching
+            let bunf_index = index;
+            code.push(Box::new(move |bunf: &mut BunF|
+                {bunf.move_to(bunf_index); Ok(())}
+            ));
+
+            let str = self.test_arm(&code).ok_or(BunFError::InvalidMatchArm(0))?;
+            
+            if cond {
+                
+                let output = self.output.clone();
+
+                code.iter().for_each(|oper| oper(self)
+                    .expect("Any error should have been caught when validating"));
+                
+                self.output = output;
+            }
+            
+            self.output.push_str(&format!("[{str}[-]]"));
+            
+            self.array[index] = EC;
+            
+            Ok(())
+        } else {
+            Err(TypeMismatch(vec![EmptyType::Bool, EEC], vec![slice.clone()]))
+        }
+        
+    }
+
+    fn bool_while(&mut self, index: usize,
+               mut code: Vec<Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>>) -> Result<(), BunFError> {
+
+        self.move_to(index);
+
+        let slice = self.get(index);
+
+        if let Type::Bool(bool) = slice {
+
+            let mut cond = *bool;
+
+            // after the func, move to the correct location to continue matching
+            let bunf_index = index;
+            code.push(Box::new(move |bunf: &mut BunF|
+                {bunf.move_to(bunf_index); Ok(())}
+            ));
+
+            let str = self.test_arm(&code).ok_or(BunFError::InvalidMatchArm(0))?;
+
+            let output = self.output.clone();
+
+            while cond {
+
+                code.iter().for_each(|oper| oper(self)
+                    .expect("Any error should have been caught when validating"));
+
+                if let Type::Bool(bool) = self.get(index){
+                    cond = *bool;
+                }
+            }
+
+            self.output = output;
+
+            self.output.push_str(&format!("[{str}]"));
+
+            self.array[index] = EC;
+
+            Ok(())
+        } else {
+            Err(TypeMismatch(vec![EmptyType::Bool, EEC], vec![slice.clone()]))
+        }
+
+    }
 }
 
 #[cfg(test)]
@@ -934,25 +1140,88 @@ mod tests {
     }
 
     #[test]
+    fn while_test(){
+        let mut bunf = BunF::new();
+
+        bunf.set(0, Type::Bool(true)).unwrap();
+
+        bunf.set(1, Type::U32(0)).unwrap();
+
+        bunf.bool_while(0, vec![
+            Box::new(|x| {x.clear(1);Ok(())}),
+            Box::new(|x| x.set(1, Type::U32(1))),
+            Box::new(|x| {x.clear(0);Ok(())}),
+            Box::new(|x| x.set(0, Type::Bool(false)))
+
+        ]).unwrap();
+
+        assert!(bunf.test_run().unwrap());
+    }
+
+    #[test]
+    fn if_test(){
+
+        let mut bunf = BunF::new();
+
+        bunf.set(0, Type::Bool(true)).unwrap();
+        bunf.set(1, Type::I32(-1)).unwrap();
+        
+        bunf.bool_if(0, vec![
+            Box::new(|x| {x.clear(1); Ok(())}),
+            Box::new(|x| x.set(1, Type::I32(1)))
+        ]).unwrap();
+
+        assert!(bunf.test_run().unwrap())
+    }
+
+    #[test]
+    fn match_test(){
+
+        let mut bunf = BunF::new();
+
+        bunf.set(0, Type::U32(0)).unwrap();
+
+        bunf.set(1, Type::from('h')).unwrap();
+
+        bunf.match_char(1, &mut [
+            ('a' as u8, vec![
+                Box::new(|x|{x.clear(0); Ok(())}),
+                Box::new(|x| x.set(0, Type::U32(1)))
+            ]),
+            ('h' as u8, vec![
+                Box::new(|x|{x.clear(0); Ok(())}),
+                Box::new(|x| x.set(0, Type::U32(3)))
+            ]),
+            ('g' as u8, vec![
+                Box::new(|x|{x.clear(0); Ok(())}),
+                Box::new(|x| x.set(0, Type::U32(9)))
+            ]),
+        ]).unwrap();
+
+        assert!(bunf.test_run().unwrap())
+
+    }
+
+    #[test]
     fn copy_test() {
 
         let mut bunf = BunF::new();
 
         bunf.set(0, Type::U32(2)).unwrap();
 
-        bunf.copy(0).unwrap();
+        bunf.copy_u32(0).unwrap();
 
         bunf.set(2, Type::from(-3)).unwrap();
 
-        bunf.copy(2).unwrap();
+        bunf.copy_u32(2).unwrap();
 
         bunf.set(4, Type::from(true)).unwrap();
 
-        bunf.copy(4).unwrap();
+        bunf.copy_u32(4).unwrap();
 
         bunf.set(6, Type::from('a')).unwrap();
 
-        bunf.copy(6).unwrap();
+        bunf.copy_u32(6).unwrap();
 
         assert!(bunf.test_run().unwrap())
     }
