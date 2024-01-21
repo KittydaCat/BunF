@@ -138,7 +138,7 @@ pub fn exec_bf_instruction(
 
         // pointer left and right
         '>' => {
-            *array_index = *array_index + 1;
+            *array_index += 1;
 
             if *array_index == array.len() {
                 array.push(0);
@@ -148,17 +148,17 @@ pub fn exec_bf_instruction(
             if *array_index == 0 {
                 return Err(BFError::NegativeArrayPointer);
             };
-            *array_index = *array_index - 1;
+            *array_index -= 1;
         }
 
         // loop stuff
         '[' => {
             if array[*array_index] == 0 {
-                *instruct_index = equalize_brackets(&instructions, *instruct_index, 1)?
+                *instruct_index = equalize_brackets(instructions, *instruct_index, 1)?
             };
         }
         ']' => {
-            *instruct_index = equalize_brackets(&instructions, *instruct_index, -1)? - 1;
+            *instruct_index = equalize_brackets(instructions, *instruct_index, -1)? - 1;
         }
 
         // input (,) and output (.)
