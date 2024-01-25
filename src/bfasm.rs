@@ -7,7 +7,7 @@ mod binterp;
 
 use Type::EmptyCell as EC;
 
-use crate::bfasm::BunFError::TypeMismatch;
+use crate::bfasm::BFASMError::TypeMismatch;
 use EmptyType::EmptyCell as EEC;
 
 // https://minond.xyz/brainfuck/ was used for testing code when it broke
@@ -226,21 +226,21 @@ impl From<&Type> for EmptyType {
 }
 
 #[derive(Debug, Clone)]
-pub enum BunFError {
+pub enum BFASMError {
     TypeMismatch(Vec<EmptyType>, Vec<Type>),
     InvalidIndex(usize),
     InvalidStringIndex(usize),
     InvalidMatchArm(usize),
 }
 
-impl Display for BunFError {
+impl Display for BFASMError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(&match self {
             TypeMismatch(expected, found) => {
                 format!("Type Mismatch: Expected: {:?} Found: {:?}", expected, found)
             }
-            BunFError::InvalidIndex(index) => format!("Invalid array index of {index}"),
-            BunFError::InvalidStringIndex(index) => format!("Invalid string index of {index}"),
+            BFASMError::InvalidIndex(index) => format!("Invalid array index of {index}"),
+            BFASMError::InvalidStringIndex(index) => format!("Invalid string index of {index}"),
             _ => {
                 todo!()
             }
@@ -248,12 +248,12 @@ impl Display for BunFError {
     }
 }
 
-impl std::error::Error for BunFError {}
+impl std::error::Error for BFASMError {}
 
 // TODO make a doc comment
 // if the pointer is at a type it will be at the first cell of it
 #[derive(Debug, Clone)]
-pub struct BunF {
+pub struct BFASM {
     pub array: Vec<Type>,
     pub output: String,
     pub index: usize,
@@ -265,8 +265,10 @@ pub struct BunF {
     // matching chars | sort by decreasing ascii value or by most used?
 }
 
-impl From<&BunF> for Vec<u32> {
-    fn from(bunf: &BunF) -> Self {
+type BFASMCode = Vec<Box<dyn Fn(&mut BFASM) -> Result<(), BFASMError>>>;
+
+impl From<&BFASM> for Vec<u32> {
+    fn from(bunf: &BFASM) -> Self {
         bunf.array
             .iter()
             .flat_map(<&Type as Into<Vec<u32>>>::into)
@@ -274,13 +276,13 @@ impl From<&BunF> for Vec<u32> {
     }
 }
 
-impl Default for BunF {
+impl Default for BFASM {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BunF {
+impl BFASM {
     pub fn new() -> Self {
         Self {
             array: vec![],
@@ -456,10 +458,10 @@ impl BunF {
         self.index = expected_index;
     }
 
-    pub fn set(&mut self, index: usize, item: Type) -> Result<(), BunFError> {
+    pub fn set(&mut self, index: usize, item: Type) -> Result<(), BFASMError> {
         self.move_to(index);
 
-        // if self.array.len() <= index {return Err(BunFError::InvalidIndex(index));}
+        // if self.array.len() <= index {return Err(BFASMError::InvalidIndex(index));}
 
         match item {
             Type::U32(val) => {
@@ -604,7 +606,7 @@ impl BunF {
         };
     }
 
-    pub fn copy_u32(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn copy_u32(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index);
 
         match self.get(index) {
@@ -671,7 +673,7 @@ impl BunF {
         Ok(())
     }
 
-    pub fn add_i32(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn add_i32(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index);
 
         let found = self.get_slice(index, 9);
@@ -716,7 +718,7 @@ impl BunF {
         Ok(())
     }
 
-    pub fn input(&mut self, index: usize, input_val: Type) -> Result<(), BunFError> {
+    pub fn input(&mut self, index: usize, input_val: Type) -> Result<(), BFASMError> {
         self.move_to(index);
 
         match input_val {
@@ -770,11 +772,11 @@ impl BunF {
         Ok(())
     }
 
-    pub fn input_str(&mut self, index: usize, str: &str) -> Result<(), BunFError> {
+    pub fn input_str(&mut self, index: usize, str: &str) -> Result<(), BFASMError> {
         self.input(index, Type::IString(IString(Vec::from(str.as_bytes()))))
     }
 
-    pub fn index_str(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn index_str(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index + 1);
 
         let found = self.get_slice(index, 3);
@@ -801,7 +803,7 @@ impl BunF {
         Ok(())
     }
 
-    pub fn str_push_front(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn str_push_front(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index + 1);
 
         if let [Type::FString(array) | Type::IString(IString(array)), Type::Char(char), EC] =
@@ -823,7 +825,7 @@ impl BunF {
         Ok(())
     }
 
-    pub fn str_push(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn str_push(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index - 1);
 
         let found = self.get_slice(index - 2, 3);
@@ -846,7 +848,7 @@ impl BunF {
         Ok(())
     }
 
-    pub fn array_push(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn array_push(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index + 1);
 
         let found = self.get_slice(index, 3);
@@ -868,7 +870,7 @@ impl BunF {
         Ok(())
     }
 
-    pub fn array_push_front(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn array_push_front(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index - 1);
 
         let found = self.get_slice(index - 2, 3);
@@ -890,7 +892,7 @@ impl BunF {
         Ok(())
     }
 
-    pub fn array_index(&mut self, index: usize) -> Result<(), BunFError> {
+    pub fn array_index(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index + 1);
 
         let found = self.get_slice(index, 3);
@@ -914,17 +916,17 @@ impl BunF {
         Ok(())
     }
 
-    // same as array[-index] in python be careful of off by one index errors!
-    pub fn array_index_back(&mut self, index: usize) -> Result<(), BunFError> {
+    // just like the string index
+    pub fn array_index_back(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index + 1);
 
         let found = self.get_slice(index, 3);
 
         if let [Type::Array(array), Type::U32(val), EC] = found {
-            *val = array[array.len() - *val as usize];
+            *val = array[array.len() - *val as usize - 1];
 
             // fill ones
-            self.output.push_str("-[-<<<[<]+[>]>>]\n");
+            self.output.push_str("[-<<<[<]+[>]>>]\n");
             // grab the indexed value and copy it
             self.output
                 .push_str("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
@@ -941,7 +943,43 @@ impl BunF {
         Ok(())
     }
 
-    pub fn add_u32(&mut self, index: usize) -> Result<(), BunFError> {
+    // just like the string index
+    pub fn array_set_back(&mut self, index: usize) -> Result<(), BFASMError> {
+        self.move_to(index + 1);
+
+        let found = self.get_slice(index, 3);
+
+        if let [Type::Array(array), Type::U32(bf_index), Type::U32(val)] = found {
+
+            let array_index = array.len() - *bf_index as usize - 1;
+            array[array_index] = *val;
+
+            self.array[index + 1] = EC;
+            self.array[index + 2] = EC;
+
+            self.index = index + 2;
+
+            // fill ones and clear value
+            self.output.push_str("[-<<<[<]+[>]>>]<<<[<]<[-]+>>[>]>>>\n");
+
+            self.output.push_str("[-<<<<[<]<+>>[>]>>>]")
+            // // grab the indexed value and copy it
+            // self.output
+            //     .push_str("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
+            // // put the value back abd remove the ones
+            // self.output
+            //     .push_str("[-<<<<[<]<+>>[>]>>>]<<<<[<]>[>->]>>-\n");
+        } else {
+            return Err(TypeMismatch(
+                vec![EmptyType::Array, EmptyType::U32, EEC],
+                Vec::from(found),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn add_u32(&mut self, index: usize) -> Result<(), BFASMError> {
         self.move_to(index);
 
         let slice = self.get_slice(index, 2);
@@ -959,13 +997,11 @@ impl BunF {
         }
     }
 
-    // type BunFCode = Vec<Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>>;
-
     pub fn match_char(
         &mut self,
         index: usize,
-        match_arms: &mut [(u8, Vec<Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>>)],
-    ) -> Result<(), BunFError> {
+        match_arms: &mut [(u8, BFASMCode)],
+    ) -> Result<(), BFASMError> {
         self.move_to(index);
 
         // sort the match arms
@@ -985,7 +1021,7 @@ impl BunF {
                 // correct the starting location
                 code.insert(
                     0,
-                    Box::new(|bunf: &mut BunF| {
+                    Box::new(|bunf: &mut BFASM| {
                         bunf.index += 4;
                         Ok(())
                     }),
@@ -993,13 +1029,13 @@ impl BunF {
 
                 // after the func, move to the correct location to continue matching
                 let bunf_index = self.index + 5;
-                code.push(Box::new(move |bunf: &mut BunF| {
+                code.push(Box::new(move |bunf: &mut BFASM| {
                     bunf.move_to(bunf_index);
                     Ok(())
                 }));
 
                 let Some(str) = self.test_arm(code) else {
-                    return Err(BunFError::InvalidMatchArm(match_index));
+                    return Err(BFASMError::InvalidMatchArm(match_index));
                 };
 
                 if *cond == val {
@@ -1053,8 +1089,8 @@ impl BunF {
         Ok(())
     }
 
-    fn test_arm(&self, code: &[Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>]) -> Option<String> {
-        let mut bunf = BunF {
+    fn test_arm(&self, code: &BFASMCode) -> Option<String> {
+        let mut bunf = BFASM {
             array: self.array.clone(),
             output: "".to_string(),
             index: self.index,
@@ -1076,8 +1112,8 @@ impl BunF {
     fn bool_if(
         &mut self,
         index: usize,
-        mut code: Vec<Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>>,
-    ) -> Result<(), BunFError> {
+        mut code: BFASMCode,
+    ) -> Result<(), BFASMError> {
         self.move_to(index);
 
         let slice = self.get(index);
@@ -1087,12 +1123,12 @@ impl BunF {
 
             // after the func, move to the correct location to continue matching
             let bunf_index = index;
-            code.push(Box::new(move |bunf: &mut BunF| {
+            code.push(Box::new(move |bunf: &mut BFASM| {
                 bunf.move_to(bunf_index);
                 Ok(())
             }));
 
-            let str = self.test_arm(&code).ok_or(BunFError::InvalidMatchArm(0))?;
+            let str = self.test_arm(&code).ok_or(BFASMError::InvalidMatchArm(0))?;
 
             if cond {
                 let output = self.output.clone();
@@ -1120,8 +1156,8 @@ impl BunF {
     fn bool_while(
         &mut self,
         index: usize,
-        mut code: Vec<Box<dyn Fn(&mut BunF) -> Result<(), BunFError>>>,
-    ) -> Result<(), BunFError> {
+        mut code: BFASMCode,
+    ) -> Result<(), BFASMError> {
         self.move_to(index);
 
         let slice = self.get(index);
@@ -1131,12 +1167,12 @@ impl BunF {
 
             // after the func, move to the correct location to continue matching
             let bunf_index = index;
-            code.push(Box::new(move |bunf: &mut BunF| {
+            code.push(Box::new(move |bunf: &mut BFASM| {
                 bunf.move_to(bunf_index);
                 Ok(())
             }));
 
-            let str = self.test_arm(&code).ok_or(BunFError::InvalidMatchArm(0))?;
+            let str = self.test_arm(&code).ok_or(BFASMError::InvalidMatchArm(0))?;
 
             let output = self.output.clone();
 
@@ -1164,6 +1200,71 @@ impl BunF {
             ))
         }
     }
+
+    fn greater_than(&mut self, index: usize) -> Result<(), BFASMError> {
+
+        self.move_to(index + 4);
+
+        let slice = self.get_slice(index, 5);
+
+        if let [Type::U32(val1), EC, Type::U32(val2), EC, EC] = slice {
+
+            self.array[index] = Type::Bool(val1 > val2);
+            self.array[index + 2] = EC;
+            self.index = index;
+
+            self.output.push_str("+<<[-<<[->]>]>>[<<<<[>+<[-]]>>>]>-<<[-]<[-<+>]<")
+
+        } else {
+            return Err(TypeMismatch(vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC], Vec::from(slice)))
+        }
+
+        Ok(())
+    }
+
+    fn less_than(&mut self, index: usize) -> Result<(), BFASMError> {
+
+        self.move_to(index + 3);
+
+        let slice = self.get_slice(index, 5);
+
+        if let [Type::U32(val1), EC, Type::U32(val2), EC, EC] = slice {
+
+            self.array[index] = Type::Bool(val1 < val2);
+            self.array[index + 2] = EC;
+            self.index = index;
+
+            self.output.push_str("+<[-<<[->]>]>>[<<+>>>]<-<[-]<<[-]>[-<+>]<")
+
+        } else {
+            return Err(TypeMismatch(vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC], Vec::from(slice)))
+        }
+
+        Ok(())
+    }
+
+    fn equals(&mut self, index: usize) -> Result<(), BFASMError> {
+
+        self.move_to(index + 4);
+
+        let slice = self.get_slice(index, 5);
+
+        if let [Type::U32(val1), EC, Type::U32(val2), EC, EC] = slice {
+
+            self.array[index] = Type::Bool(val1 == val2);
+            self.array[index + 2] = EC;
+            self.index = index;
+
+            //                    +<<[-<<[->]>]>>[<<<<[-]>+>>]>-<<[-]<[-<+>]<?
+            self.output.push_str("+<<[-<<[->]>]>>[<<<+<[>-<[-]]>>>]>-<<[-]<[-<+>]<");
+
+
+        } else {
+            return Err(TypeMismatch(vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC], Vec::from(slice)))
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1173,7 +1274,7 @@ mod tests {
     #[test]
     fn bf() {
 
-        // let mut bunf = BunF::new();
+        // let mut bunf = BFASM::new();
         //
         // bunf.input_str(",[->+<]."); // input the string
 
@@ -1195,8 +1296,41 @@ mod tests {
     }
 
     #[test]
+    fn array_set() {
+        let mut bunf = BFASM::new();
+
+        bunf.set(0, Type::Array(vec![0,1,2,3,4])).unwrap();
+
+        bunf.set(1, Type::U32(0)).unwrap();
+        bunf.set(2, Type::U32(5)).unwrap();
+
+        bunf.array_set_back(0).unwrap();
+
+        assert!(bunf.test_run().unwrap())
+    }
+
+    #[test]
+    fn comparison_tests() {
+        for func in [BFASM::greater_than, BFASM::less_than, BFASM::equals] {
+
+            for (x, y) in [(1,3), (3,1), (3,3)] {
+
+                let mut bunf = BFASM::new();
+
+                bunf.set(0, Type::U32(x)).unwrap();
+
+                bunf.set(2, Type::U32(y)).unwrap();
+
+                func(&mut bunf, 0).unwrap();
+
+                assert!(bunf.test_run().unwrap())
+            }
+        }
+    }
+
+    #[test]
     fn while_test() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(0, Type::Bool(true)).unwrap();
 
@@ -1224,7 +1358,7 @@ mod tests {
 
     #[test]
     fn if_test() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(0, Type::Bool(true)).unwrap();
         bunf.set(1, Type::I32(-1)).unwrap();
@@ -1246,7 +1380,7 @@ mod tests {
 
     #[test]
     fn match_test() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(0, Type::U32(0)).unwrap();
 
@@ -1256,7 +1390,7 @@ mod tests {
             1,
             &mut [
                 (
-                    'a' as u8,
+                    b'a',
                     vec![
                         Box::new(|x| {
                             x.clear(0);
@@ -1266,7 +1400,7 @@ mod tests {
                     ],
                 ),
                 (
-                    'h' as u8,
+                    b'h',
                     vec![
                         Box::new(|x| {
                             x.clear(0);
@@ -1276,7 +1410,7 @@ mod tests {
                     ],
                 ),
                 (
-                    'g' as u8,
+                    b'g',
                     vec![
                         Box::new(|x| {
                             x.clear(0);
@@ -1294,7 +1428,7 @@ mod tests {
 
     #[test]
     fn copy_test() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(0, Type::U32(2)).unwrap();
 
@@ -1317,7 +1451,7 @@ mod tests {
 
     #[test]
     fn array_index() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(2, Type::Array(vec![1, 2, 3])).unwrap();
 
@@ -1330,7 +1464,7 @@ mod tests {
 
     #[test]
     fn array_test() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(2, Type::Array(vec![1, 2, 3])).unwrap();
 
@@ -1342,7 +1476,7 @@ mod tests {
 
         bunf.array_push(0).unwrap();
 
-        bunf.set(1, Type::U32(1)).unwrap();
+        bunf.set(1, Type::U32(0)).unwrap();
 
         bunf.array_index_back(0).unwrap();
 
@@ -1351,7 +1485,7 @@ mod tests {
 
     #[test]
     fn str_index() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(2, Type::from("hello world")).unwrap(); //
 
@@ -1374,7 +1508,7 @@ mod tests {
 
     #[test]
     fn str_input() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.input_str(0, "hello").unwrap();
 
@@ -1387,7 +1521,7 @@ mod tests {
             for y in -3..3 {
                 dbg!(x, y);
 
-                let mut bunf = BunF::new();
+                let mut bunf = BFASM::new();
 
                 bunf.set(0, Type::from(x)).unwrap();
 
@@ -1402,7 +1536,7 @@ mod tests {
 
     #[test]
     fn set_and_clear() {
-        let mut bunf = BunF::new();
+        let mut bunf = BFASM::new();
 
         bunf.set(0, Type::U32(5)).unwrap();
 

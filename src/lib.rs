@@ -2,7 +2,7 @@
 mod bfasm;
 mod program;
 
-use crate::bfasm::Type;
+use crate::bfasm::{EmptyType, Type};
 
 // #[derive(Debug)]
 // struct Variable (
@@ -33,6 +33,7 @@ enum Function {
     NewArray,
     InputChar,
     PrintU32(Value),
+    CloneU32(String),
 }
 
 impl Function {
@@ -81,10 +82,31 @@ impl Function {
             }
         }
     }
+
+    // amount of space after the variable needed for the function
+    // including EC and values passed into the function
+    fn len(&self) -> Option<usize> {
+        match self {
+            Function::Index(_, _) => {Some(2)}
+            Function::IndexSet(_, _, _) => {Some(2)}
+            Function::Assign(_, _) => {Some(0)}
+            Function::Add(_, _) => {Some(0)}
+            Function::Subtract(_, _) => {Some(0)}
+            Function::Equal(_, _) => {Some(4)}
+            Function::GreaterThan(_, _) => {Some(4)}
+            Function::LessThan(_, _) => {Some(4)}
+            Function::Len(_) => {Some(2)}
+            Function::Push(_, _) => {Some(2)}
+            Function::InputStr => {None} // ???
+            Function::NewArray => {None} // 3?
+            Function::InputChar => {Some(0)} // 1?
+            Function::PrintU32(_) => {Some(0)}
+            Function::CloneU32(_) => {Some(0)}
+        }
+    }
 }
 #[derive(PartialEq, Debug)]
 enum Value {
-    Var(String),
     Func(Box<Function>),
     Static(Type),
 }
@@ -125,6 +147,20 @@ impl Statement {
             }
         }
     }
+}
+
+type Variable = (String, EmptyType, usize);
+
+struct Scope<'a> {
+    current: Vec<Variable>,
+    above: Option<&'a mut Scope<'a>>
+}
+
+enum AnnotatedStatement {
+    If(Value, (Vec<Statement>, Vec<Variable>)),
+    Match(Value, Vec<(Type, (Vec<Statement>, Vec<Variable>))>),
+    While(Value, (Vec<Statement>, Vec<Variable>)),
+    Function(Function),
 }
 
 #[derive(Debug, PartialEq)]
@@ -200,6 +236,7 @@ impl Token {
 // }
 
 use std::iter::Enumerate;
+use std::ops::{Deref, DerefMut};
 use std::str::Chars;
 // at _ found (_ or nothing), expected _
 // struct TokenizeError(usize, Option<char>, String);
@@ -354,6 +391,7 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
             Token::Name(ref var) => {
                 index += 1;
 
+                // ex: x += 1;
                 if let [oper @ (T::Plus | T::Minus), T::Equal, T::Name(ref val), T::SemiColon] =
                     &tokens[index..index + 4]
                 {
@@ -361,12 +399,12 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
                         var.clone(),
                         Value::Func(if *oper == T::Plus {
                             Box::new(Function::Add(
-                                Value::Var(var.clone()),
+                                Value::Func(Box::new(Function::CloneU32(String::from(var)))),
                                 Value::Static(str_to_type(val).unwrap()),
                             ))
                         } else if *oper == T::Minus {
                             Box::new(Function::Subtract(
-                                Value::Var(var.clone()),
+                                Value::Func(Box::new(Function::CloneU32(String::from(var)))),
                                 Value::Static(str_to_type(val).unwrap()),
                             ))
                         } else {
@@ -375,6 +413,8 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
                     )));
 
                     index += 4;
+
+                    // ex: x[1] = ..;
                 } else if let [T::OpenBracket, T::Name(ref var_index), T::CloseBracket, T::Equal] =
                     &tokens[index..index + 4]
                 {
@@ -392,6 +432,7 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
                     )));
 
                     index += 1;
+                // ex x[1] += ..;
                 } else if let Some(
                     [T::OpenBracket, T::Name(ref var_index), T::CloseBracket, oper @ (T::Plus | Token::Minus), T::Equal],
                 ) = tokens.get(index..index + 5)
@@ -428,6 +469,7 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
                     )));
 
                     index += 1;
+                // ex: x. or x(
                 } else if let T::Dot | T::OpenParens = &tokens[index] {
                     let starting_index = index;
 
@@ -462,7 +504,6 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
                     // ));
 
                     index += 1;
-                } else if T::OpenParens == tokens[index] {
                 } else {
                     panic!()
                 }
@@ -654,7 +695,7 @@ fn str_to_value(str: &str) -> Value {
     if let Some(bf_type) = str_to_type(str) {
         Value::Static(bf_type)
     } else {
-        Value::Var(String::from(str))
+        Value::Func(Box::new(Function::CloneU32(String::from(str))))
     }
 }
 
@@ -668,6 +709,97 @@ fn str_to_type(value: &str) -> Option<Type> {
             Some(Type::Char(value.chars().nth(1)? as u8))
         }
         _ => Some(Type::U32(value.parse().ok()?)),
+    }
+}
+
+// lables each variable with the amount of space it needs
+fn annotate_statements(statements: &[Statement], above_scope: Option<&mut Scope>)
+    -> (Vec<AnnotatedStatement>, Vec<Variable>) {
+
+    let current = Scope{ current: vec![], above: above_scope };
+
+    let anno_states = statements.iter().map(|statement| {
+
+        match statement {
+            Statement::If(val, code) => {todo!()}
+            Statement::Match(val, match_arms) => {todo!()}
+            Statement::While(val, code) => {todo!()}
+            Statement::Function(func) => {todo!()}
+        }
+
+    }).collect::<Vec<AnnotatedStatement>>();
+
+    let Scope{current: vars, .. } = current;
+
+    return (anno_states, vars)
+}
+
+fn annotate_value(value: &Value, scope: &mut Scope) {
+
+    match value{
+        Value::Func(func) => {
+            annotate_func(&*func, scope)
+        }
+        Value::Static(val) => {}
+    }
+}
+
+fn annotate_func(func: &Function, scope: &mut Scope) {
+
+    // match func {
+    //     Function::Index(x, _) => {}
+    //     Function::IndexSet(x, _, _) => {}
+    //     Function::Len(x) => {}
+    //     Function::Push(x, _) => {}
+    //     Function::CloneU32(x) => {}
+    //     // need to add new var names as well
+    //     Function::Assign(x, _) => {}
+    //     _ => {}
+    // }
+
+    match func {
+        Function::Len(var) | Function::CloneU32(var) => {
+            increase_req_space(scope, var, 2)
+        }
+
+        Function::PrintU32(val) => {}
+
+        Function::Index(var, val) | Function::Assign(var, val) | Function::Push(var, val) => {
+
+        }
+
+        Function::Add(val1, val2) |
+        Function::Subtract(val1, val2) |
+        Function::Equal(val1, val2) |
+        Function::GreaterThan(val1, val2) |
+        Function::LessThan(val1, val2) => {}
+
+        Function::IndexSet(var, val1, val2) => {}
+        _ => {}
+    }
+}
+
+// returns Some if the value was updated or false if the value wasnt found
+// we can just unwrap :|
+fn increase_req_space(mut scope: &mut Scope, var_name: &str, min_val: usize) {
+
+    // for var in *scope.current {
+    //     if *var.0 == var {
+    //         var.2 = std::cmp::max(var.2, min_val);
+    //         break
+    //     }
+    // }
+
+    if let Some(var) = scope.current.iter_mut().find(|(name, _, _)| name == var_name) {
+
+        var.2 = std::cmp::max(var.2, min_val);
+
+    } else {
+
+        let Some(subscope) = scope.above else { todo!() };
+
+        // Todo will panic
+        increase_req_space(subscope.clone(), var_name, min_val)
     }
 }
 #[cfg(test)]
