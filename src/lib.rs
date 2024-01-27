@@ -17,7 +17,7 @@ use crate::bfasm::{EmptyType, Type};
 //     Vec<Statement>
 // );
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 enum Function {
     Index(String, Value),
     IndexSet(String, Value, Value),
@@ -105,7 +105,7 @@ impl Function {
         }
     }
 }
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 enum Value {
     Func(Box<Function>),
     Static(Type),
@@ -157,9 +157,9 @@ struct Scope<'a> {
 }
 
 enum AnnotatedStatement {
-    If(Value, (Vec<Statement>, Vec<Variable>)),
-    Match(Value, Vec<(Type, (Vec<Statement>, Vec<Variable>))>),
-    While(Value, (Vec<Statement>, Vec<Variable>)),
+    If(Value, (Vec<AnnotatedStatement>, Vec<Variable>)),
+    Match(Value, Vec<(Type, (Vec<AnnotatedStatement>, Vec<Variable>))>),
+    While(Value, (Vec<AnnotatedStatement>, Vec<Variable>)),
     Function(Function),
 }
 
@@ -236,7 +236,6 @@ impl Token {
 // }
 
 use std::iter::Enumerate;
-use std::ops::{Deref, DerefMut};
 use std::str::Chars;
 // at _ found (_ or nothing), expected _
 // struct TokenizeError(usize, Option<char>, String);
@@ -302,8 +301,8 @@ fn tokenize(code: &str) -> Option<Vec<Token>> {
     }
 }
 
-// returns a alphanumeric string and the non alphanumeric or None if the iter was ended before an
-// non alphanumeric char was found
+// returns an alphanumeric string and the non-alphanumeric or None if the iter was ended before a
+// non-alphanumeric char was found
 fn next_word(iter: &mut Enumerate<Chars>) -> Option<(String, (usize, char))> {
     let mut str = String::new();
 
@@ -713,23 +712,70 @@ fn str_to_type(value: &str) -> Option<Type> {
 }
 
 // lables each variable with the amount of space it needs
-fn annotate_statements(statements: &[Statement], above_scope: Option<&mut Scope>)
-    -> (Vec<AnnotatedStatement>, Vec<Variable>) {
+fn annotate_statements<'a>(statements: &[Statement], above_scope: Option<&'a mut Scope<'a>>)
+                           -> (Vec<AnnotatedStatement>, Vec<Variable>) {
 
-    let current = Scope{ current: vec![], above: above_scope };
+    let mut current_scope = Scope{ current: vec![], above: above_scope };
 
-    let anno_states = statements.iter().map(|statement| {
+    // let anno_states = statements.iter().map(|statement| {
+    //
+    //     match statement {
+    //         Statement::If(val, code) => {
+    //             // annotate_value(val, &mut current_scope);
+    //
+    //             let statement2 = annotate_statements(code, Some(borrow));
+    //
+    //             AnnotatedStatement::If(val.clone(), statement2)
+    //
+    //         }
+    //         Statement::Match(val, match_arms) => {
+    //             // annotate_value(val, &mut current_scope);
+    //             //
+    //             // // let scope = Some(&mut current_scope);
+    //             //
+    //             // // let anno_arms = match_arms.iter().map(
+    //             // //     move |(bftype, statements)|(bftype.clone(), annotate_statements(statements, scope))
+    //             // // ).collect();
+    //             //
+    //             // let mut anno_arms = Vec::new();
+    //             //
+    //             // for (bftype, statements) in match_arms {
+    //             //     anno_arms.push((bftype.clone(), annotate_statements(statements, Some(&mut current_scope))));
+    //             // }
+    //             //
+    //             // AnnotatedStatement::Match(val.clone(), anno_arms)
+    //             todo!()
+    //         }
+    //         Statement::While(val, code) => {
+    //             todo!();
+    //             annotate_value(val, &mut current_scope);
+    //             AnnotatedStatement::While(val.clone(), annotate_statements(code, Some(&mut current_scope)))
+    //         }
+    //         Statement::Function(func) => {
+    //             todo!();
+    //             // annotate_func(func, &mut current_scope);
+    //             // AnnotatedStatement::Function(func.clone())
+    //         }
+    //     }
+    //
+    // }).collect::<Vec<AnnotatedStatement>>();
+    let mut anno_states = Vec::new();
 
+    for statement in statements {
         match statement {
-            Statement::If(val, code) => {todo!()}
-            Statement::Match(val, match_arms) => {todo!()}
-            Statement::While(val, code) => {todo!()}
-            Statement::Function(func) => {todo!()}
+            Statement::If(val, code) => {
+                // annotate_value(val, &mut current_scope);
+
+                let statement2 = annotate_statements(code, Some(&mut current_scope));
+                anno_states.push(AnnotatedStatement::If(val.clone(), statement2))
+            }
+            Statement::Match(_, _) => {}
+            Statement::While(_, _) => {}
+            Statement::Function(_) => {}
         }
+    }
 
-    }).collect::<Vec<AnnotatedStatement>>();
-
-    let Scope{current: vars, .. } = current;
+    let Scope{current: vars, .. } = current_scope;
 
     return (anno_states, vars)
 }
@@ -746,42 +792,41 @@ fn annotate_value(value: &Value, scope: &mut Scope) {
 
 fn annotate_func(func: &Function, scope: &mut Scope) {
 
-    // match func {
-    //     Function::Index(x, _) => {}
-    //     Function::IndexSet(x, _, _) => {}
-    //     Function::Len(x) => {}
-    //     Function::Push(x, _) => {}
-    //     Function::CloneU32(x) => {}
-    //     // need to add new var names as well
-    //     Function::Assign(x, _) => {}
-    //     _ => {}
-    // }
-
     match func {
         Function::Len(var) | Function::CloneU32(var) => {
-            increase_req_space(scope, var, 2)
+            increase_req_space(scope, var, 2);
         }
 
-        Function::PrintU32(val) => {}
+        Function::PrintU32(val) => {
+            annotate_value(val, scope);
+        }
 
         Function::Index(var, val) | Function::Assign(var, val) | Function::Push(var, val) => {
-
+            increase_req_space(scope, var, 2);
+            annotate_value(val, scope);
         }
 
         Function::Add(val1, val2) |
         Function::Subtract(val1, val2) |
         Function::Equal(val1, val2) |
         Function::GreaterThan(val1, val2) |
-        Function::LessThan(val1, val2) => {}
+        Function::LessThan(val1, val2) => {
+            annotate_value(val1, scope);
+            annotate_value(val2, scope);
+        }
 
-        Function::IndexSet(var, val1, val2) => {}
-        _ => {}
+        Function::IndexSet(var, val1, val2) => {
+            annotate_value(val1, scope);
+            annotate_value(val2, scope);
+            increase_req_space(scope, var, 2);
+        }
+        Function::InputStr | Function::NewArray | Function::InputChar => {}
     }
 }
 
-// returns Some if the value was updated or false if the value wasnt found
+// returns Some if the value was updated or false if the value wasn't found
 // we can just unwrap :|
-fn increase_req_space(mut scope: &mut Scope, var_name: &str, min_val: usize) {
+fn increase_req_space(scope: &mut Scope, var_name: &str, min_val: usize) {
 
     // for var in *scope.current {
     //     if *var.0 == var {
@@ -796,10 +841,10 @@ fn increase_req_space(mut scope: &mut Scope, var_name: &str, min_val: usize) {
 
     } else {
 
-        let Some(subscope) = scope.above else { todo!() };
+        let Some(ref mut subscope) = scope.above else { todo!() };
 
         // Todo will panic
-        increase_req_space(subscope.clone(), var_name, min_val)
+        increase_req_space(*subscope, var_name, min_val)
     }
 }
 #[cfg(test)]
