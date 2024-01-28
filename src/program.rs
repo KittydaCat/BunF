@@ -13,7 +13,7 @@ pub(crate) fn main() {
     let mut array_index = 0;
 
     while program_index < program.len() {
-        match program[program_index] {
+        match program.chars().nth(program_index).unwrap() {
             '>' => {
                 array_index += 1;
                 if array_index == array.len() {
@@ -40,7 +40,7 @@ pub(crate) fn main() {
                     let mut bracket_count = 1;
                     program_index += 1;
                     while bracket_count > 0 {
-                        match program[program_index] {
+                        match program.chars().nth(program_index).unwrap() {
                             '[' => {
                                 bracket_count += 1;
                             }
@@ -61,7 +61,7 @@ pub(crate) fn main() {
                     while bracket_count > 0 {
                         program_index -= 1;
 
-                        match program[program_index] {
+                        match program.chars().nth(program_index).unwrap() {
                             '[' => {
                                 bracket_count -= 1;
                             }

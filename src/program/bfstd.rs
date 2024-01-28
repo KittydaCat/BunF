@@ -12,7 +12,7 @@ pub fn input_char() -> u32 {
     return line.chars().next().unwrap() as u32;
 }
 
-pub fn input_str() -> Vec<char> {
+pub fn input_str() -> String {
     let mut line = String::new();
     //
     // // std::io::stdin().read_to_end()
@@ -29,7 +29,7 @@ pub fn input_str() -> Vec<char> {
 
     println!("You typed: {}", &line);
 
-    line.chars().collect()
+    line
 }
 
 pub fn new_array() -> Vec<u32> {
