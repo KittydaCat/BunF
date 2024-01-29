@@ -1,6 +1,7 @@
-use std::cmp::{min, Ordering};
+use std::cmp::{Ordering};
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::Deref;
+use std::usize;
 
 use crate::bfasm::binterp::{run_bf, BFError};
 mod binterp;
@@ -9,43 +10,9 @@ use Type::EmptyCell as EC;
 use EmptyType::EmptyCell as EEC;
 
 use crate::bfasm::BfasmError::TypeMismatch;
+use crate::bfasm::EmptyType::IString;
 
 // https://minond.xyz/brainfuck/ was used for testing code when it broke
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct IString(pub Vec<u8>);
-
-// impl IString {
-//
-//     pub fn len(&self) -> u32 {
-//
-//         (self.0.len()) as u32
-//
-//     }
-//
-// }
-//
-// impl Index<u32> for IString{
-//     type Output = u8;
-//
-//     fn index(&self, index: u32) -> &Self::Output {
-//
-//         let IString(x) = &self;
-//
-//         &x[index as usize]
-//     }
-// }
-//
-// impl From<&str> for IString {
-//     fn from(value: &str) -> Self {
-//
-//         let Type::IString(x) = Type::from(value) else {unreachable!()};
-//
-//         x
-//     }
-// }
-//
-// impl IString {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -54,7 +21,7 @@ pub enum Type {
     Bool(bool),
     Char(u8),
     FString(Vec<u8>),
-    IString(IString),
+    IString(Vec<u8>),
     Array(Vec<u32>),
     EmptyCell,
 }
@@ -72,7 +39,7 @@ impl Type {
             Type::Char(_) => 1,
             Type::FString(val) => val.len() * 2 + 4,
             Type::EmptyCell => 1,
-            Type::IString(IString(_)) | Type::Array(_) => {
+            Type::IString(_) | Type::Array(_) => {
                 unimplemented!()
             }
         }
@@ -134,6 +101,12 @@ impl From<&[u8]> for Type {
     }
 }
 
+impl From<Vec<u32>> for Type {
+    fn from(value: Vec<u32>) -> Self {
+        Type::Array(value)
+    }
+}
+
 impl From<&Type> for Vec<u32> {
     fn from(bf_type: &Type) -> Self {
         match bf_type {
@@ -149,7 +122,7 @@ impl From<&Type> for Vec<u32> {
             Type::Char(x) => {
                 vec![*x as u32]
             }
-            Type::FString(x) | Type::IString(IString(x)) => [
+            Type::FString(x) | Type::IString(x) => [
                 vec![0_u32, 0_u32],
                 x.iter()
                     .rev()
@@ -183,7 +156,7 @@ impl From<&Type> for String {
             Type::Bool(val) => String::from(if *val { 't' } else { 'f' }),
             Type::Char(val) => (*val).to_string(),
             Type::FString(val) => String::from_utf8(val.clone()).unwrap(),
-            Type::IString(IString(val)) => String::from_utf8(val.clone()).unwrap(),
+            Type::IString(val) => String::from_utf8(val.clone()).unwrap(),
             Type::EmptyCell | Type::Array(_) => {
                 unimplemented!()
             }
@@ -218,7 +191,7 @@ impl From<&Type> for EmptyType {
             Type::Bool(_) => EmptyType::Bool,
             Type::Char(_) => EmptyType::Char,
             Type::FString(_) => EmptyType::FString,
-            Type::IString(IString(_)) => EmptyType::IString,
+            Type::IString(_) => EmptyType::IString,
             Type::Array(_) => EmptyType::Array,
             Type::EmptyCell => EmptyType::EmptyCell,
         }
@@ -261,8 +234,6 @@ pub struct Bfasm {
     pub expected_output: String,
     // TODO:
     // Add BF code labeling !!!
-    // if statements
-    // matching chars | sort by decreasing ascii value or by most used?
 }
 
 pub type BfasmCode = Vec<Box<dyn Fn(&mut Bfasm) -> Result<(), BfasmError>>>;
@@ -422,45 +393,56 @@ impl Bfasm {
         self.array.get_mut(index).unwrap()
     }
 
-    pub fn move_to_f(&mut self, expected_index: usize) -> Result<(), BfasmError> {
-        self.move_to(expected_index);
-        Ok(())
-    }
+    // pub fn move_to_f(&mut self, expected_index: usize) -> Result<(), BfasmError> {
+    //     self.move_to(expected_index);
+    //     Ok(())
+    // }
 
     pub fn move_to(&mut self, expected_index: usize) {
         // dbg!(&self);
 
-        while let order @ (Ordering::Greater | Ordering::Less) = expected_index.cmp(&self.index) {
+        let str = self.traverse(self.index, expected_index);
+        
+        self.output.push_str(&str);
+        
+        self.index = expected_index;
+    }
+    
+    fn traverse(&mut self, mut index: usize, goal: usize) -> String {
+        
+        let mut output = String::new();
+
+        while let order @ (Ordering::Greater | Ordering::Less) = index.cmp(&goal) {
             match order {
-                Ordering::Greater => {
-                    let str = match self.get(self.index) {
+                Ordering::Less => {
+                    let str = match self.get(index) {
                         Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => ">",
                         Type::I32(_) => ">>",
-                        Type::FString(_) | Type::IString(IString(_)) | Type::Array(_) => ">>[>>]>>",
+                        Type::FString(_) | Type::IString(_) | Type::Array(_) => ">>[>>]>>",
                     };
 
-                    self.output.push_str(str); // dbg!(str, index).0);
+                    output.push_str(str); // dbg!(str, index).0);
 
-                    self.index += 1;
+                    index += 1;
                 }
-                Ordering::Less => {
-                    let str = match self.get(self.index - 1) {
+                Ordering::Greater => {
+                    let str = match self.get(index - 1) {
                         Type::U32(_) | Type::Bool(_) | Type::Char(_) | Type::EmptyCell => "<",
                         Type::I32(_) => "<<",
-                        Type::FString(_) | Type::IString(IString(_)) | Type::Array(_) => "<<<<[<<]",
+                        Type::FString(_) | Type::IString(_) | Type::Array(_) => "<<<<[<<]",
                     };
 
-                    self.output.push_str(str); //dbg!(str, index).0);
+                    output.push_str(str); //dbg!(str, index).0);
 
-                    self.index -= 1;
+                   index -= 1;
                 }
                 Ordering::Equal => {
                     unreachable!()
                 }
             }
         }
-
-        self.index = expected_index;
+        
+        output
     }
 
     pub fn set(&mut self, index: usize, item: Type) -> Result<(), BfasmError> {
@@ -512,7 +494,7 @@ impl Bfasm {
                     return Err(TypeMismatch(vec![EEC], Vec::from(x)));
                 }
             }
-            Type::FString(ref str) | Type::IString(IString(ref str)) => {
+            Type::FString(ref str) | Type::IString(ref str) => {
                 let len = str.len() * 2 + 4;
                 let slice = self.get_slice(index, len);
                 let expected = (0..len).map(|_| EC).collect::<Vec<Type>>();
@@ -572,7 +554,7 @@ impl Bfasm {
             }
 
             Type::EmptyCell => {
-                todo!() // ?
+                panic!("why?")
             }
         };
 
@@ -581,23 +563,33 @@ impl Bfasm {
         Ok(())
     }
 
+    // Todo Test
     pub fn move_type(&mut self, index: usize, target_index: usize) -> Result<(), BfasmError> {
 
-        if self.get(target_index) != Type::EmptyCell {
+        self.move_to(index);
+
+        if *self.get(target_index) != Type::EmptyCell {
             return Err(TypeMismatch(vec![EEC], vec![self.get(target_index).clone()]));
         }
 
         let target = self.get(index);
 
         match target {
-            bftype @ Type::U32(_) | Type::Bool(_) | Type::Char(_) => {
-                std::mem::swap(bftype, self.get(target_index));
+            bftype @ (Type::U32(_) | Type::Bool(_) | Type::Char(_)) => {
+
+                let move_val = bftype.clone();
+
+                *bftype = EC;
+
+                self.array[target_index] = move_val;
 
 
+                
+                let to_target = self.traverse(index, target_index);
+                let to_goal = self.traverse(target_index, index);
+                
+                write!(self.output, "[-{to_goal}+{to_target}]").expect("TODO: panic message");
 
-                let slice = self.get_slice()
-
-                todo!();
                 Ok(())
             }
             Type::I32(_) | Type::FString(_) | Type::IString(_) | Type::Array(_) | Type::EmptyCell => {
@@ -630,7 +622,7 @@ impl Bfasm {
 
                 self.index += len - 1;
             }
-            Type::EmptyCell | Type::IString(IString(_)) | Type::Array(_) => {
+            Type::EmptyCell | Type::IString(_) | Type::Array(_) => {
                 unimplemented!() //     Todo?
             }
         };
@@ -695,7 +687,7 @@ impl Bfasm {
                     ));
                 }
             }
-            Type::FString(_) | Type::IString(IString(_)) | Type::Array(_) | Type::EmptyCell => {
+            Type::FString(_) | Type::IString(_) | Type::Array(_) | Type::EmptyCell => {
                 unimplemented!()
             }
         }
@@ -726,7 +718,7 @@ impl Bfasm {
             // and if the remaining one and copy the sign over
             self.output
                 .push_str("<[[-<<+>>]<<<[-]>>[-<<+>>]>]<[-]>>]\n");
-            // add (with nothing if difference in signs) and delete extra sign
+            // add (with nothing if diffe rence in signs) and delete extra sign
             self.output.push_str("<[-<<+>>]<[-]<<\n");
         } else {
             return Err(TypeMismatch(
@@ -770,7 +762,7 @@ impl Bfasm {
                 }
             }
 
-            Type::IString(IString(str)) => {
+            Type::IString(str) => {
                 // self.expected_input.push_str(&String::from_utf8(str).unwrap());
                 self.expected_input
                     .push_str(&String::from_utf8(str.clone()).unwrap());
@@ -788,7 +780,7 @@ impl Bfasm {
                         self.array.pop();
                     });
 
-                    self.array.push(Type::IString(IString(str)));
+                    self.array.push(Type::IString(str));
                 }
 
                 self.index += 1;
@@ -803,7 +795,7 @@ impl Bfasm {
     }
 
     pub fn input_str(&mut self, index: usize, str: &str) -> Result<(), BfasmError> {
-        self.input(index, Type::IString(IString(Vec::from(str.as_bytes()))))
+        self.input(index, Type::IString(Vec::from(str.as_bytes())))
     }
 
     pub fn index_str(&mut self, index: usize) -> Result<(), BfasmError> {
@@ -811,7 +803,7 @@ impl Bfasm {
 
         let found = self.get_slice(index, 3);
 
-        if let [Type::IString(IString(val)) | Type::FString(val), Type::U32(str_index), EC] = found
+        if let [Type::IString(val) | Type::FString(val), Type::U32(str_index), EC] = found
         {
             self.array[index + 1] = Type::Char(val[*str_index as usize]);
 
@@ -836,7 +828,7 @@ impl Bfasm {
     pub fn str_push_front(&mut self, index: usize) -> Result<(), BfasmError> {
         self.move_to(index + 1);
 
-        if let [Type::FString(array) | Type::IString(IString(array)), Type::Char(char), EC] =
+        if let [Type::FString(array) | Type::IString(array), Type::Char(char), EC] =
             self.get_slice(index, 3)
         {
             array.insert(0, *char);
@@ -860,7 +852,7 @@ impl Bfasm {
 
         let found = self.get_slice(index - 2, 3);
 
-        if let [EC, Type::Char(char), Type::FString(array) | Type::IString(IString(array))] = found
+        if let [EC, Type::Char(char), Type::FString(array) | Type::IString(array)] = found
         {
             array.push(*char);
 
@@ -1009,6 +1001,35 @@ impl Bfasm {
         Ok(())
     }
 
+    // Todo Test
+    pub(crate) fn get_len(&mut self, index: usize) -> Result<(), BfasmError> {
+
+        self.move_to(index + 1);
+
+        let slice = self.get_slice(index,2);
+
+        if let [val @ (Type::IString(_) | Type::FString(_) | Type::Array(_)), target @ EC, EC] = slice {
+
+            let len = match val {
+                Type::FString(str) | Type::IString(str) => {str.len()}
+                Type::Array(array) => {array.len()}
+                _ => {unreachable!()}
+            };
+
+            *target = Type::U32(len as u32);
+
+            self.output.push_str("<[->+>+<<]>>[-<<+>>]");
+
+            self.index += 1;
+
+            Ok(())
+
+        } else {
+            Err(TypeMismatch(vec![IString, EEC], Vec::from(slice)))
+        }
+
+    }
+
     pub fn add_u32(&mut self, index: usize) -> Result<(), BfasmError> {
         self.move_to(index);
 
@@ -1026,12 +1047,25 @@ impl Bfasm {
             ))
         }
     }
+    pub fn unsafe_sub_u32(&mut self, index: usize) -> Result<(), BfasmError> {
+        self.move_to(index);
 
-    pub fn match_char(
-        &mut self,
-        index: usize,
-        match_arms: &mut [(u8, BfasmCode)],
-    ) -> Result<(), BfasmError> {
+        let slice = self.get_slice(index, 2);
+
+        if let [Type::U32(x), Type::U32(y)] = slice {
+            *x -= *y;
+            self.array[index + 1] = EC;
+            self.output.push_str(">[-<->]<");
+            Ok(())
+        } else {
+            Err(TypeMismatch(
+                vec![EmptyType::U32, EmptyType::U32],
+                Vec::from(slice),
+            ))
+        }
+    }
+
+    pub fn match_char(&mut self, index: usize, match_arms: &mut [(u8, BfasmCode)]) -> Result<(), BfasmError> {
         self.move_to(index);
 
         // sort the match arms
@@ -1139,11 +1173,7 @@ impl Bfasm {
         }
     }
 
-    fn bool_if(
-        &mut self,
-        index: usize,
-        mut code: BfasmCode,
-    ) -> Result<(), BfasmError> {
+    fn bool_if(&mut self, index: usize, mut code: BfasmCode) -> Result<(), BfasmError> {
         self.move_to(index);
 
         let slice = self.get(index);
@@ -1183,11 +1213,7 @@ impl Bfasm {
         }
     }
 
-    fn bool_while(
-        &mut self,
-        index: usize,
-        mut code: BfasmCode,
-    ) -> Result<(), BfasmError> {
+    fn bool_while(&mut self, index: usize, mut code: BfasmCode) -> Result<(), BfasmError> {
         self.move_to(index);
 
         let slice = self.get(index);
@@ -1231,7 +1257,7 @@ impl Bfasm {
         }
     }
 
-    fn greater_than(&mut self, index: usize) -> Result<(), BfasmError> {
+    pub(crate) fn greater_than(&mut self, index: usize) -> Result<(), BfasmError> {
 
         self.move_to(index + 4);
 
@@ -1252,7 +1278,7 @@ impl Bfasm {
         Ok(())
     }
 
-    fn less_than(&mut self, index: usize) -> Result<(), BfasmError> {
+    pub(crate) fn less_than(&mut self, index: usize) -> Result<(), BfasmError> {
 
         self.move_to(index + 3);
 
@@ -1273,7 +1299,7 @@ impl Bfasm {
         Ok(())
     }
 
-    fn equals(&mut self, index: usize) -> Result<(), BfasmError> {
+    pub(crate) fn equals(&mut self, index: usize) -> Result<(), BfasmError> {
 
         self.move_to(index + 4);
 
