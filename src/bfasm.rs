@@ -9,8 +9,7 @@ mod binterp;
 use Type::EmptyCell as EC;
 use EmptyType::EmptyCell as EEC;
 
-use crate::bfasm::BfasmError::TypeMismatch;
-use crate::bfasm::EmptyType::IString;
+use crate::bfasm::BfasmError::{TypeMismatch};
 
 // https://minond.xyz/brainfuck/ was used for testing code when it broke
 
@@ -598,7 +597,7 @@ impl Bfasm {
         }
     }
 
-    fn clear(&mut self, index: usize) {
+    pub fn clear(&mut self, index: usize) {
         self.move_to(index);
 
         match self.get(index) {
@@ -825,6 +824,32 @@ impl Bfasm {
         Ok(())
     }
 
+    pub fn print(&mut self, index: usize) -> Result<(), BfasmError> {
+        self.move_to(index);
+
+        match self.get(index) {
+            Type::U32(val) => {
+
+                let char = *val as u8 as char;
+                self.expected_output.push(char);
+
+                self.output.push('.');
+                Ok(())
+            }
+
+            Type::Char(val) => {
+                let char = *val as char;
+                self.expected_output.push(char);
+
+                self.output.push('.');
+                Ok(())
+            }
+
+            bf_type @ (Type::I32(_) | Type::Bool(_) | Type::FString(_) | Type::IString(_) |
+            Type::Array(_) | Type::EmptyCell) => {Err(TypeMismatch(vec![EmptyType::Char], vec![bf_type.clone()]))}
+        }
+    }
+
     pub fn str_push_front(&mut self, index: usize) -> Result<(), BfasmError> {
         self.move_to(index + 1);
 
@@ -1002,7 +1027,7 @@ impl Bfasm {
     }
 
     // Todo Test
-    pub(crate) fn get_len(&mut self, index: usize) -> Result<(), BfasmError> {
+    pub fn get_len(&mut self, index: usize) -> Result<(), BfasmError> {
 
         self.move_to(index + 1);
 
@@ -1025,7 +1050,7 @@ impl Bfasm {
             Ok(())
 
         } else {
-            Err(TypeMismatch(vec![IString, EEC], Vec::from(slice)))
+            Err(TypeMismatch(vec![EmptyType::IString, EEC], Vec::from(slice)))
         }
 
     }
@@ -1065,11 +1090,21 @@ impl Bfasm {
         }
     }
 
-    pub fn match_char(&mut self, index: usize, match_arms: &mut [(u8, BfasmCode)]) -> Result<(), BfasmError> {
+    pub fn match_char(&mut self, index: usize, match_arms: &[(u8, BfasmCode)]) -> Result<(), BfasmError> {
         self.move_to(index);
 
         // sort the match arms
-        match_arms.sort_by_key(|(char, _)| *char);
+        // match_arms.sort_by_key(|(char, _)| *char);
+
+        // check that the match arms are sorted
+
+        let mut init_val = 0;
+        for (index, (val, _)) in match_arms.iter().enumerate(){
+
+            if init_val > *val {return Err(BfasmError::InvalidMatchArm(index))};
+
+            init_val = *val
+        }
 
         let slice = self.get_slice(index, 6);
 
@@ -1080,25 +1115,17 @@ impl Bfasm {
 
             self.output.push_str(">>>>+<<");
 
+            // correct the starting location
+
+            self.index += 4;
+
             // validate the arms
-            for (match_index, (cond, code)) in match_arms.iter_mut().enumerate() {
-                // correct the starting location
-                code.insert(
-                    0,
-                    Box::new(|bunf: &mut Bfasm| {
-                        bunf.index += 4;
-                        Ok(())
-                    }),
-                );
+            for (match_index, (cond, code)) in match_arms.iter().enumerate() {
 
                 // after the func, move to the correct location to continue matching
-                let bunf_index = self.index + 5;
-                code.push(Box::new(move |bunf: &mut Bfasm| {
-                    bunf.move_to(bunf_index);
-                    Ok(())
-                }));
+                let bunf_index = self.index + 1;
 
-                let Some(str) = self.test_arm(code) else {
+                let Some(str) = self.test_arm(code, bunf_index) else {
                     return Err(BfasmError::InvalidMatchArm(match_index));
                 };
 
@@ -1153,18 +1180,20 @@ impl Bfasm {
         Ok(())
     }
 
-    fn test_arm(&self, code: &BfasmCode) -> Option<String> {
+    fn test_arm(&self, code: &BfasmCode, ret_index: usize) -> Option<String> {
         let mut bunf = Bfasm {
             array: self.array.clone(),
             output: "".to_string(),
             index: self.index,
-            expected_input: self.expected_input.clone(),
-            expected_output: self.expected_output.clone(),
+            expected_input: String::new(),
+            expected_output: String::new(),
         };
 
         for oper in code {
             oper(&mut bunf).ok()?;
         }
+
+        bunf.move_to(ret_index);
 
         if EmptyType::from_vec(&self.array) == EmptyType::from_vec(&bunf.array) {
             Some(bunf.output)
@@ -1173,7 +1202,7 @@ impl Bfasm {
         }
     }
 
-    fn bool_if(&mut self, index: usize, mut code: BfasmCode) -> Result<(), BfasmError> {
+    pub fn bool_if(&mut self, index: usize, code: &BfasmCode) -> Result<(), BfasmError> {
         self.move_to(index);
 
         let slice = self.get(index);
@@ -1182,13 +1211,8 @@ impl Bfasm {
             let cond = *cond;
 
             // after the func, move to the correct location to continue matching
-            let bunf_index = index;
-            code.push(Box::new(move |bunf: &mut Bfasm| {
-                bunf.move_to(bunf_index);
-                Ok(())
-            }));
 
-            let str = self.test_arm(&code).ok_or(BfasmError::InvalidMatchArm(0))?;
+            let str = self.test_arm(&code, index).ok_or(BfasmError::InvalidMatchArm(0))?;
 
             if cond {
                 let output = self.output.clone();
@@ -1213,7 +1237,7 @@ impl Bfasm {
         }
     }
 
-    fn bool_while(&mut self, index: usize, mut code: BfasmCode) -> Result<(), BfasmError> {
+    pub fn bool_while(&mut self, index: usize, code: &BfasmCode) -> Result<(), BfasmError> {
         self.move_to(index);
 
         let slice = self.get(index);
@@ -1221,14 +1245,7 @@ impl Bfasm {
         if let Type::Bool(bool) = slice {
             let mut cond = *bool;
 
-            // after the func, move to the correct location to continue matching
-            let bunf_index = index;
-            code.push(Box::new(move |bunf: &mut Bfasm| {
-                bunf.move_to(bunf_index);
-                Ok(())
-            }));
-
-            let str = self.test_arm(&code).ok_or(BfasmError::InvalidMatchArm(0))?;
+            let str = self.test_arm(&code, index).ok_or(BfasmError::InvalidMatchArm(0))?;
 
             let output = self.output.clone();
 
@@ -1239,7 +1256,7 @@ impl Bfasm {
 
                 if let Type::Bool(bool) = self.get(index) {
                     cond = *bool;
-                }
+                } else {return Err(BfasmError::InvalidMatchArm(0))}
             }
 
             self.output = output;
@@ -1257,7 +1274,7 @@ impl Bfasm {
         }
     }
 
-    pub(crate) fn greater_than(&mut self, index: usize) -> Result<(), BfasmError> {
+    pub fn greater_than(&mut self, index: usize) -> Result<(), BfasmError> {
 
         self.move_to(index + 4);
 
@@ -1278,7 +1295,7 @@ impl Bfasm {
         Ok(())
     }
 
-    pub(crate) fn less_than(&mut self, index: usize) -> Result<(), BfasmError> {
+    pub fn less_than(&mut self, index: usize) -> Result<(), BfasmError> {
 
         self.move_to(index + 3);
 
@@ -1299,7 +1316,7 @@ impl Bfasm {
         Ok(())
     }
 
-    pub(crate) fn equals(&mut self, index: usize) -> Result<(), BfasmError> {
+    pub fn equals(&mut self, index: usize) -> Result<(), BfasmError> {
 
         self.move_to(index + 4);
 
@@ -1394,7 +1411,7 @@ mod tests {
 
         bunf.bool_while(
             0,
-            vec![
+            &vec![
                 Box::new(|x| {
                     x.clear(1);
                     Ok(())
@@ -1421,7 +1438,7 @@ mod tests {
 
         bunf.bool_if(
             0,
-            vec![
+            &vec![
                 Box::new(|x| {
                     x.clear(1);
                     Ok(())
@@ -1442,42 +1459,42 @@ mod tests {
 
         bunf.set(1, Type::from('h')).unwrap();
 
-        bunf.match_char(
-            1,
-            &mut [
-                (
-                    b'a',
-                    vec![
-                        Box::new(|x| {
-                            x.clear(0);
-                            Ok(())
-                        }),
-                        Box::new(|x| x.set(0, Type::U32(1))),
-                    ],
-                ),
-                (
-                    b'h',
-                    vec![
-                        Box::new(|x| {
-                            x.clear(0);
-                            Ok(())
-                        }),
-                        Box::new(|x| x.set(0, Type::U32(3))),
-                    ],
-                ),
-                (
-                    b'g',
-                    vec![
-                        Box::new(|x| {
-                            x.clear(0);
-                            Ok(())
-                        }),
-                        Box::new(|x| x.set(0, Type::U32(9))),
-                    ],
-                ),
-            ],
-        )
-        .unwrap();
+        let mut arms: Vec<(u8, Vec<Box<(dyn for<'a> Fn(&'a mut Bfasm) -> Result<(), BfasmError> + 'static)>>)> = vec![
+            (
+                b'a',
+                vec![
+                    Box::new(|x: &mut Bfasm| {
+                        x.clear(0);
+                        Ok(())
+                    }),
+                    Box::new(|x| x.set(0, Type::U32(1))),
+                ],
+            ),
+            (
+                b'h',
+                vec![
+                    Box::new(|x| {
+                        x.clear(0);
+                        Ok(())
+                    }),
+                    Box::new(|x| x.set(0, Type::U32(3))),
+                ],
+            ),
+            (
+                b'g',
+                vec![
+                    Box::new(|x| {
+                        x.clear(0);
+                        Ok(())
+                    }),
+                    Box::new(|x| x.set(0, Type::U32(9))),
+                ],
+            ),
+        ];
+
+        arms.sort_by_key(|(x, _)| *x);
+
+        bunf.match_char(1, &arms).unwrap();
 
         assert!(bunf.test_run().unwrap())
     }
