@@ -1,4 +1,4 @@
-use std::cmp::{Ordering};
+use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::Deref;
 use std::usize;
@@ -7,9 +7,10 @@ use crate::bfasm::binterp::{run_bf, BFError};
 mod binterp;
 
 use Type::EmptyCell as EC;
+// use Type as T;
 use EmptyType::EmptyCell as EEC;
 
-use crate::bfasm::BfasmError::{TypeMismatch};
+use crate::bfasm::BfasmError::TypeMismatch;
 
 // https://minond.xyz/brainfuck/ was used for testing code when it broke
 
@@ -401,14 +402,13 @@ impl Bfasm {
         // dbg!(&self);
 
         let str = self.traverse(self.index, expected_index);
-        
+
         self.output.push_str(&str);
-        
+
         self.index = expected_index;
     }
-    
+
     fn traverse(&mut self, mut index: usize, goal: usize) -> String {
-        
         let mut output = String::new();
 
         while let order @ (Ordering::Greater | Ordering::Less) = index.cmp(&goal) {
@@ -433,14 +433,14 @@ impl Bfasm {
 
                     output.push_str(str); //dbg!(str, index).0);
 
-                   index -= 1;
+                    index -= 1;
                 }
                 Ordering::Equal => {
                     unreachable!()
                 }
             }
         }
-        
+
         output
     }
 
@@ -499,14 +499,7 @@ impl Bfasm {
                 let expected = (0..len).map(|_| EC).collect::<Vec<Type>>();
 
                 if slice == expected {
-                    // self.output.push_str(&format!(
-                    //         "{}>>>{}>\n",
-                    //         str.iter()
-                    //             .rev()
-                    //             .map(|char| format!(">>{}", "+".repeat(*char as usize)))
-                    //             .collect::<String>(), // add each char
-                    //         "+".repeat(str.len())
-                    // ));
+
                     str.iter().rev().for_each(|char| {
                         write!(self.output, ">>{}", "+".repeat(*char as usize)).unwrap()
                     });
@@ -564,36 +557,37 @@ impl Bfasm {
 
     // Todo Test
     pub fn move_type(&mut self, index: usize, target_index: usize) -> Result<(), BfasmError> {
-
         self.move_to(index);
 
         if *self.get(target_index) != Type::EmptyCell {
-            return Err(TypeMismatch(vec![EEC], vec![self.get(target_index).clone()]));
+            return Err(TypeMismatch(
+                vec![EEC],
+                vec![self.get(target_index).clone()],
+            ));
         }
 
         let target = self.get(index);
 
         match target {
             bftype @ (Type::U32(_) | Type::Bool(_) | Type::Char(_)) => {
-
                 let move_val = bftype.clone();
 
                 *bftype = EC;
 
                 self.array[target_index] = move_val;
 
-
-                
                 let to_target = self.traverse(index, target_index);
                 let to_goal = self.traverse(target_index, index);
-                
+
                 write!(self.output, "[-{to_goal}+{to_target}]").expect("TODO: panic message");
 
                 Ok(())
             }
-            Type::I32(_) | Type::FString(_) | Type::IString(_) | Type::Array(_) | Type::EmptyCell => {
-                Err(TypeMismatch(vec![EmptyType::U32], vec![target.clone()]))
-            }
+            Type::I32(_)
+            | Type::FString(_)
+            | Type::IString(_)
+            | Type::Array(_)
+            | Type::EmptyCell => Err(TypeMismatch(vec![EmptyType::U32], vec![target.clone()])),
         }
     }
 
@@ -802,8 +796,7 @@ impl Bfasm {
 
         let found = self.get_slice(index, 3);
 
-        if let [Type::IString(val) | Type::FString(val), Type::U32(str_index), EC] = found
-        {
+        if let [Type::IString(val) | Type::FString(val), Type::U32(str_index), EC] = found {
             self.array[index + 1] = Type::Char(val[*str_index as usize]);
 
             // fill ones
@@ -829,7 +822,6 @@ impl Bfasm {
 
         match self.get(index) {
             Type::U32(val) => {
-
                 let char = *val as u8 as char;
                 self.expected_output.push(char);
 
@@ -845,8 +837,12 @@ impl Bfasm {
                 Ok(())
             }
 
-            bf_type @ (Type::I32(_) | Type::Bool(_) | Type::FString(_) | Type::IString(_) |
-            Type::Array(_) | Type::EmptyCell) => {Err(TypeMismatch(vec![EmptyType::Char], vec![bf_type.clone()]))}
+            bf_type @ (Type::I32(_)
+            | Type::Bool(_)
+            | Type::FString(_)
+            | Type::IString(_)
+            | Type::Array(_)
+            | Type::EmptyCell) => Err(TypeMismatch(vec![EmptyType::Char], vec![bf_type.clone()])),
         }
     }
 
@@ -877,8 +873,7 @@ impl Bfasm {
 
         let found = self.get_slice(index - 2, 3);
 
-        if let [EC, Type::Char(char), Type::FString(array) | Type::IString(array)] = found
-        {
+        if let [EC, Type::Char(char), Type::FString(array) | Type::IString(array)] = found {
             array.push(*char);
 
             self.array.remove(index - 2);
@@ -997,7 +992,6 @@ impl Bfasm {
         let found = self.get_slice(index, 3);
 
         if let [Type::Array(array), Type::U32(bf_index), Type::U32(val)] = found {
-
             let array_index = array.len() - *bf_index as usize - 1;
             array[array_index] = *val;
 
@@ -1028,17 +1022,19 @@ impl Bfasm {
 
     // Todo Test
     pub fn get_len(&mut self, index: usize) -> Result<(), BfasmError> {
-
         self.move_to(index + 1);
 
-        let slice = self.get_slice(index,2);
+        let slice = self.get_slice(index, 2);
 
-        if let [val @ (Type::IString(_) | Type::FString(_) | Type::Array(_)), target @ EC, EC] = slice {
-
+        if let [val @ (Type::IString(_) | Type::FString(_) | Type::Array(_)), target @ Type::EmptyCell, EC] =
+            slice
+        {
             let len = match val {
-                Type::FString(str) | Type::IString(str) => {str.len()}
-                Type::Array(array) => {array.len()}
-                _ => {unreachable!()}
+                Type::FString(str) | Type::IString(str) => str.len(),
+                Type::Array(array) => array.len(),
+                _ => {
+                    unreachable!()
+                }
             };
 
             *target = Type::U32(len as u32);
@@ -1048,11 +1044,12 @@ impl Bfasm {
             self.index += 1;
 
             Ok(())
-
         } else {
-            Err(TypeMismatch(vec![EmptyType::IString, EEC], Vec::from(slice)))
+            Err(TypeMismatch(
+                vec![EmptyType::IString, EEC],
+                Vec::from(slice),
+            ))
         }
-
     }
 
     pub fn add_u32(&mut self, index: usize) -> Result<(), BfasmError> {
@@ -1090,7 +1087,49 @@ impl Bfasm {
         }
     }
 
-    pub fn match_char(&mut self, index: usize, match_arms: &[(u8, BfasmCode)]) -> Result<(), BfasmError> {
+    pub(crate) fn insert_ec(&mut self, index: usize, number: usize) -> Result<(), BfasmError> {
+
+        let mut ending_index = self.array.len();
+        while *self.get(ending_index-1) == EC {ending_index -= 1;}
+
+        self.move_to(ending_index);
+
+        let l = "<".repeat(number);
+        let r = ">".repeat(number);
+
+        while ending_index != index {
+
+            ending_index -= 1;
+            self.output.push('<');
+
+            match self.get(ending_index) {
+                Type::U32(_) | Type::Bool(_) | Type::Char(_) => {
+                    write!(self.output, "[-{r}+{l}]").unwrap();
+                }
+                Type::I32(_) => {
+                    write!(self.output, "[-{r}+{l}]<[-{r}+{l}]").unwrap();
+                }
+                Type::FString(_) | Type::IString(_) | Type::Array(_) => {
+                    write!(self.output, "[-{r}+{l}]<<<[-{r}+{l}<<]").unwrap();
+                }
+                Type::EmptyCell => {}
+            }
+        }
+
+        self.index = index;
+
+        (0..number).for_each(|_| self.array.insert(index, EC));
+
+        Ok(())
+
+    }
+
+    pub fn match_char(
+        &mut self,
+        index: usize,
+        match_arms: &[(u8, BfasmCode)],
+    ) -> Result<(), BfasmError> {
+
         self.move_to(index);
 
         // sort the match arms
@@ -1099,9 +1138,10 @@ impl Bfasm {
         // check that the match arms are sorted
 
         let mut init_val = 0;
-        for (index, (val, _)) in match_arms.iter().enumerate(){
-
-            if init_val > *val {return Err(BfasmError::InvalidMatchArm(index))};
+        for (index, (val, _)) in match_arms.iter().enumerate() {
+            if init_val >= *val {
+                return Err(BfasmError::InvalidMatchArm(index));
+            };
 
             init_val = *val
         }
@@ -1113,14 +1153,16 @@ impl Bfasm {
 
             let mut previous_cond = 0;
 
-            self.output.push_str(">>>>+<<");
+            self.output.push_str(">>>>>+<<"); // might be to many >s
 
-            // correct the starting location
-
-            self.index += 4;
+            self.index += 4; // ???
 
             // validate the arms
             for (match_index, (cond, code)) in match_arms.iter().enumerate() {
+
+                self.output
+                    .push_str(&"+".repeat((*cond - previous_cond) as usize));
+                self.output.push_str("[-<<[->]>]>>[<<<<[>]>>>>[");
 
                 // after the func, move to the correct location to continue matching
                 let bunf_index = self.index + 1;
@@ -1130,7 +1172,7 @@ impl Bfasm {
                 };
 
                 if *cond == val {
-                    let output = self.output.clone();
+                    let output = self.output.clone(); // Very inefficient TODO memswap?
 
                     code.iter().for_each(|oper| {
                         oper(self).expect("Any error should have been caught when validating")
@@ -1138,12 +1180,8 @@ impl Bfasm {
 
                     self.output = output;
 
-                    self.index -= 2;
+                    self.move_to(index+5);
                 }
-
-                self.output
-                    .push_str(&"+".repeat((*cond - previous_cond) as usize));
-                self.output.push_str("[-<<[->]>]>>[<<<<[>]>>>>[");
                 self.output.push_str(&str);
                 self.output.push_str("]<<<");
 
@@ -1212,7 +1250,9 @@ impl Bfasm {
 
             // after the func, move to the correct location to continue matching
 
-            let str = self.test_arm(&code, index).ok_or(BfasmError::InvalidMatchArm(0))?;
+            let str = self
+                .test_arm(code, index)
+                .ok_or(BfasmError::InvalidMatchArm(0))?;
 
             if cond {
                 let output = self.output.clone();
@@ -1245,7 +1285,9 @@ impl Bfasm {
         if let Type::Bool(bool) = slice {
             let mut cond = *bool;
 
-            let str = self.test_arm(&code, index).ok_or(BfasmError::InvalidMatchArm(0))?;
+            let str = self
+                .test_arm(code, index)
+                .ok_or(BfasmError::InvalidMatchArm(0))?;
 
             let output = self.output.clone();
 
@@ -1256,7 +1298,9 @@ impl Bfasm {
 
                 if let Type::Bool(bool) = self.get(index) {
                     cond = *bool;
-                } else {return Err(BfasmError::InvalidMatchArm(0))}
+                } else {
+                    return Err(BfasmError::InvalidMatchArm(0));
+                }
             }
 
             self.output = output;
@@ -1275,65 +1319,67 @@ impl Bfasm {
     }
 
     pub fn greater_than(&mut self, index: usize) -> Result<(), BfasmError> {
-
         self.move_to(index + 4);
 
         let slice = self.get_slice(index, 5);
 
         if let [Type::U32(val1), EC, Type::U32(val2), EC, EC] = slice {
-
             self.array[index] = Type::Bool(val1 > val2);
             self.array[index + 2] = EC;
             self.index = index;
 
-            self.output.push_str("+<<[-<<[->]>]>>[<<<<[>+<[-]]>>>]>-<<[-]<[-<+>]<")
-
+            self.output
+                .push_str("+<<[-<<[->]>]>>[<<<<[>+<[-]]>>>]>-<<[-]<[-<+>]<")
         } else {
-            return Err(TypeMismatch(vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC], Vec::from(slice)))
+            return Err(TypeMismatch(
+                vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC],
+                Vec::from(slice),
+            ));
         }
 
         Ok(())
     }
 
     pub fn less_than(&mut self, index: usize) -> Result<(), BfasmError> {
-
         self.move_to(index + 3);
 
         let slice = self.get_slice(index, 5);
 
         if let [Type::U32(val1), EC, Type::U32(val2), EC, EC] = slice {
-
             self.array[index] = Type::Bool(val1 < val2);
             self.array[index + 2] = EC;
             self.index = index;
 
-            self.output.push_str("+<[-<<[->]>]>>[<<+>>>]<-<[-]<<[-]>[-<+>]<")
-
+            self.output
+                .push_str("+<[-<<[->]>]>>[<<+>>>]<-<[-]<<[-]>[-<+>]<")
         } else {
-            return Err(TypeMismatch(vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC], Vec::from(slice)))
+            return Err(TypeMismatch(
+                vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC],
+                Vec::from(slice),
+            ));
         }
 
         Ok(())
     }
 
     pub fn equals(&mut self, index: usize) -> Result<(), BfasmError> {
-
         self.move_to(index + 4);
 
         let slice = self.get_slice(index, 5);
 
         if let [Type::U32(val1), EC, Type::U32(val2), EC, EC] = slice {
-
             self.array[index] = Type::Bool(val1 == val2);
             self.array[index + 2] = EC;
             self.index = index;
 
             //                    +<<[-<<[->]>]>>[<<<<[-]>+>>]>-<<[-]<[-<+>]<?
-            self.output.push_str("+<<[-<<[->]>]>>[<<<+<[>-<[-]]>>>]>-<<[-]<[-<+>]<");
-
-
+            self.output
+                .push_str("+<<[-<<[->]>]>>[<<<+<[>-<[-]]>>>]>-<<[-]<[-<+>]<");
         } else {
-            return Err(TypeMismatch(vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC], Vec::from(slice)))
+            return Err(TypeMismatch(
+                vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC],
+                Vec::from(slice),
+            ));
         }
 
         Ok(())
@@ -1369,10 +1415,32 @@ mod tests {
     }
 
     #[test]
+    fn insert_test() {
+        let mut bfasm = Bfasm::new();
+
+        bfasm.set(0, Type::U32(2)).unwrap();
+        bfasm.set(1, Type::from(' ')).unwrap();
+
+        bfasm.insert_ec(0, 2).unwrap();
+
+        bfasm.set(0, Type::I32(-3)).unwrap();
+
+        bfasm.insert_ec(0, 5).unwrap();
+
+        bfasm.set(0, Type::Array(Vec::new())).unwrap();
+
+        bfasm.insert_ec(0, 13).unwrap();
+
+        bfasm.set(0, Type::from("abcd")).unwrap();
+
+        assert!(bfasm.test_run().unwrap());
+    }
+
+    #[test]
     fn array_set() {
         let mut bunf = Bfasm::new();
 
-        bunf.set(0, Type::Array(vec![0,1,2,3,4])).unwrap();
+        bunf.set(0, Type::Array(vec![0, 1, 2, 3, 4])).unwrap();
 
         bunf.set(1, Type::U32(0)).unwrap();
         bunf.set(2, Type::U32(5)).unwrap();
@@ -1385,9 +1453,7 @@ mod tests {
     #[test]
     fn comparison_tests() {
         for func in [Bfasm::greater_than, Bfasm::less_than, Bfasm::equals] {
-
-            for (x, y) in [(1,3), (3,1), (3,3)] {
-
+            for (x, y) in [(1, 3), (3, 1), (3, 3)] {
                 let mut bunf = Bfasm::new();
 
                 bunf.set(0, Type::U32(x)).unwrap();
@@ -1457,11 +1523,14 @@ mod tests {
 
         bunf.set(0, Type::U32(0)).unwrap();
 
-        bunf.set(1, Type::from('h')).unwrap();
+        bunf.set(1, Type::Char(2)).unwrap();
 
-        let mut arms: Vec<(u8, Vec<Box<(dyn for<'a> Fn(&'a mut Bfasm) -> Result<(), BfasmError> + 'static)>>)> = vec![
+        let mut arms: Vec<(
+            u8,
+            Vec<Box<(dyn for<'a> Fn(&'a mut Bfasm) -> Result<(), BfasmError> + 'static)>>,
+        )> = vec![
             (
-                b'a',
+                1,
                 vec![
                     Box::new(|x: &mut Bfasm| {
                         x.clear(0);
@@ -1471,7 +1540,7 @@ mod tests {
                 ],
             ),
             (
-                b'h',
+                2,
                 vec![
                     Box::new(|x| {
                         x.clear(0);
@@ -1481,7 +1550,7 @@ mod tests {
                 ],
             ),
             (
-                b'g',
+                3,
                 vec![
                     Box::new(|x| {
                         x.clear(0);

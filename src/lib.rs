@@ -38,25 +38,24 @@ enum Function {
 }
 
 impl Function {
-
     fn return_type(&self) -> Option<EmptyType> {
         match self {
-            Function::IndexStr(_, _) => {Some(EmptyType::Char)}
-            Function::Index(_, _) => {Some(EmptyType::U32)}
-            Function::IndexSet(_, _, _) => {None}
-            Function::Assign(_, _) => {None}
-            Function::Add(_, _) => {Some(EmptyType::Bool)}
-            Function::Subtract(_, _) => {Some(EmptyType::Bool)}
-            Function::Equal(_, _) => {Some(EmptyType::Bool)}
-            Function::GreaterThan(_, _) => {Some(EmptyType::Bool)}
-            Function::LessThan(_, _) => {Some(EmptyType::Bool)}
-            Function::Len(_) => {Some(EmptyType::Bool)}
-            Function::Push(_, _) => {None}
-            Function::InputStr => {Some(EmptyType::IString)}
-            Function::NewArray => {Some(EmptyType::Array)}
-            Function::InputChar => {Some(EmptyType::Char)}
-            Function::PrintU32(_) => {None}
-            Function::CloneU32(_) => {Some(EmptyType::U32)}
+            Function::IndexStr(_, _) => Some(EmptyType::Char),
+            Function::Index(_, _) => Some(EmptyType::U32),
+            Function::IndexSet(_, _, _) => None,
+            Function::Assign(_, _) => None,
+            Function::Add(_, _) => Some(EmptyType::Bool),
+            Function::Subtract(_, _) => Some(EmptyType::Bool),
+            Function::Equal(_, _) => Some(EmptyType::Bool),
+            Function::GreaterThan(_, _) => Some(EmptyType::Bool),
+            Function::LessThan(_, _) => Some(EmptyType::Bool),
+            Function::Len(_) => Some(EmptyType::Bool),
+            Function::Push(_, _) => None,
+            Function::InputStr => Some(EmptyType::IString),
+            Function::NewArray => Some(EmptyType::Array),
+            Function::InputChar => Some(EmptyType::Char),
+            Function::PrintU32(_) => None,
+            Function::CloneU32(_) => Some(EmptyType::U32),
         }
     }
 }
@@ -112,22 +111,22 @@ impl Function {
     // including EC and values passed into the function
     fn len(&self) -> Option<usize> {
         match self {
-            Function::Index(_, _) => {Some(2)}
-            Function::IndexSet(_, _, _) => {Some(2)}
-            Function::Assign(_, _) => {Some(0)}
-            Function::Add(_, _) => {Some(0)}
-            Function::Subtract(_, _) => {Some(0)}
-            Function::Equal(_, _) => {Some(4)}
-            Function::GreaterThan(_, _) => {Some(4)}
-            Function::LessThan(_, _) => {Some(4)}
-            Function::Len(_) => {Some(2)}
-            Function::Push(_, _) => {Some(2)}
-            Function::InputStr => {None} // ???
-            Function::NewArray => {None} // 3?
-            Function::InputChar => {Some(0)} // 1?
-            Function::PrintU32(_) => {Some(0)}
-            Function::CloneU32(_) => {Some(2)}
-            Function::IndexStr(_, _) => {Some(2)}
+            Function::Index(_, _) => Some(2),
+            Function::IndexSet(_, _, _) => Some(2),
+            Function::Assign(_, _) => Some(0),
+            Function::Add(_, _) => Some(0),
+            Function::Subtract(_, _) => Some(0),
+            Function::Equal(_, _) => Some(4),
+            Function::GreaterThan(_, _) => Some(4),
+            Function::LessThan(_, _) => Some(4),
+            Function::Len(_) => Some(2),
+            Function::Push(_, _) => Some(2),
+            Function::InputStr => None,     // ???
+            Function::NewArray => None,     // 3?
+            Function::InputChar => Some(0), // 1?
+            Function::PrintU32(_) => Some(0),
+            Function::CloneU32(_) => Some(2),
+            Function::IndexStr(_, _) => Some(2),
         }
     }
 }
@@ -138,19 +137,12 @@ enum Value {
 }
 
 impl Value {
-
     fn bftype(&self) -> EmptyType {
-
         match self {
-            Value::Func(func) => {
-                (**func).return_type().unwrap()
-            }
-            Value::Static(bftype) => {
-                EmptyType::from(bftype)
-            }
+            Value::Func(func) => (**func).return_type().unwrap(),
+            Value::Static(bftype) => EmptyType::from(bftype),
         }
     }
-
 }
 
 #[derive(Debug)]
@@ -195,14 +187,16 @@ type Variable = (String, EmptyType, usize);
 
 struct Scope<'a> {
     current: Vec<Variable>,
-    above: Option<&'a mut Scope<'a>>
+    above: Option<&'a mut Scope<'a>>,
 }
+
+type AnnotatedBlock = (Vec<AnnotatedStatement>, Vec<Variable>);
 
 #[derive(Debug)]
 enum AnnotatedStatement {
-    If(Value, (Vec<AnnotatedStatement>, Vec<Variable>)),
-    Match(Value, Vec<(Type, (Vec<AnnotatedStatement>, Vec<Variable>))>),
-    While(Value, (Vec<AnnotatedStatement>, Vec<Variable>)),
+    If(Value, AnnotatedBlock),
+    Match(Value, Vec<(Type, AnnotatedBlock)>),
+    While(Value, AnnotatedBlock),
     Function(Function),
 }
 
@@ -727,8 +721,9 @@ fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
                     }
                     "chars" => {
                         use Token as T;
-                        if let [T::Dot, T::Name(nth), T::OpenParens, T::Name(val), T::CloseParens, T::Dot,
-                        T::Name(unwrap), T::OpenParens, T::CloseParens] = &tokens[index+1..index+10] {
+                        if let [T::Dot, T::Name(nth), T::OpenParens, T::Name(val), T::CloseParens, T::Dot, T::Name(unwrap), T::OpenParens, T::CloseParens] =
+                            &tokens[index + 1..index + 10]
+                        {
                             assert_eq!(value, None);
                             assert_eq!(nth, "nth");
                             assert_eq!(unwrap, "unwrap");
@@ -802,71 +797,71 @@ fn str_to_type(value: &str) -> Option<Type> {
 }
 
 // lables each variable with the amount of space it needs
-fn annotate_statements(statements: &[Statement], scope: &mut Vec<Vec<Variable>>)
-                           -> (Vec<AnnotatedStatement>, Vec<Variable>) {
-
+fn annotate_statements(
+    statements: &[Statement],
+    scope: &mut Vec<Vec<Variable>>,
+) -> AnnotatedBlock {
     scope.push(Vec::new());
 
-    let anno_states = statements.iter().map(|statement| {
+    let anno_states = statements
+        .iter()
+        .map(|statement| {
+            match statement {
+                Statement::If(val, code) => {
+                    // annotate_value(val, &mut current_scope);
 
-        match statement {
-            Statement::If(val, code) => {
-                // annotate_value(val, &mut current_scope);
+                    let statement2 = annotate_statements(code, scope);
 
-                let statement2 = annotate_statements(code, scope);
-
-                AnnotatedStatement::If(val.clone(), statement2)
-
-            }
-            Statement::Match(val, match_arms) => {
-                annotate_value(val, scope);
-
-                // let scope = Some(&mut current_scope);
-
-                // let anno_arms = match_arms.iter().map(
-                //     move |(bftype, statements)|(bftype.clone(), annotate_statements(statements, scope))
-                // ).collect();
-
-                let mut anno_arms = Vec::new();
-
-                for (bftype, statements) in match_arms {
-                    anno_arms.push((bftype.clone(), annotate_statements(statements, scope)));
+                    AnnotatedStatement::If(val.clone(), statement2)
                 }
+                Statement::Match(val, match_arms) => {
+                    annotate_value(val, scope);
 
-                AnnotatedStatement::Match(val.clone(), anno_arms)
-            }
-            Statement::While(val, code) => {
-                annotate_value(val, scope);
-                AnnotatedStatement::While(val.clone(), annotate_statements(code, scope))
-            }
-            Statement::Function(func) => {
-                annotate_func(func, scope);
-                AnnotatedStatement::Function(func.clone())
-            }
-        }
+                    // let scope = Some(&mut current_scope);
 
-    }).collect::<Vec<AnnotatedStatement>>();
+                    // let anno_arms = match_arms.iter().map(
+                    //     move |(bftype, statements)|(bftype.clone(), annotate_statements(statements, scope))
+                    // ).collect();
+
+                    let mut anno_arms = Vec::new();
+
+                    for (bftype, statements) in match_arms {
+                        anno_arms.push((bftype.clone(), annotate_statements(statements, scope)));
+                    }
+
+                    AnnotatedStatement::Match(val.clone(), anno_arms)
+                }
+                Statement::While(val, code) => {
+                    annotate_value(val, scope);
+                    AnnotatedStatement::While(val.clone(), annotate_statements(code, scope))
+                }
+                Statement::Function(func) => {
+                    annotate_func(func, scope);
+                    AnnotatedStatement::Function(func.clone())
+                }
+            }
+        })
+        .collect::<Vec<AnnotatedStatement>>();
 
     (anno_states, scope.pop().unwrap())
 }
 
 fn annotate_value(value: &Value, scope: &mut [Vec<Variable>]) {
-
-    match value{
-        Value::Func(func) => {
-            annotate_func(func, scope)
-        }
+    match value {
+        Value::Func(func) => annotate_func(func, scope),
         Value::Static(_) => {}
     }
 }
 
 fn annotate_func(func: &Function, scope: &mut [Vec<Variable>]) {
-
     match func {
         Function::Assign(var, val) => {
             annotate_value(val, scope);
             match increase_req_space(scope, var, 0) {
-                None => {scope.last_mut().unwrap().push((var.clone(), val.bftype(), 0))}
+                None => scope
+                    .last_mut()
+                    .unwrap()
+                    .push((var.clone(), val.bftype(), 0)),
                 Some(_) => {}
             }
         }
@@ -884,11 +879,11 @@ fn annotate_func(func: &Function, scope: &mut [Vec<Variable>]) {
             annotate_value(val, scope);
         }
 
-        Function::Add(val1, val2) |
-        Function::Subtract(val1, val2) |
-        Function::Equal(val1, val2) |
-        Function::GreaterThan(val1, val2) |
-        Function::LessThan(val1, val2) => {
+        Function::Add(val1, val2)
+        | Function::Subtract(val1, val2)
+        | Function::Equal(val1, val2)
+        | Function::GreaterThan(val1, val2)
+        | Function::LessThan(val1, val2) => {
             annotate_value(val1, scope);
             annotate_value(val2, scope);
         }
@@ -904,8 +899,7 @@ fn annotate_func(func: &Function, scope: &mut [Vec<Variable>]) {
 
 // returns Some if the value was updated or false if the value wasn't found
 // we can just unwrap :|
-fn increase_req_space(scope: &mut [Vec<Variable>], var_name: &str, min_val: usize) -> Option<()>{
-
+fn increase_req_space(scope: &mut [Vec<Variable>], var_name: &str, min_val: usize) -> Option<()> {
     // for var in *scope.current {
     //     if *var.0 == var {
     //         var.2 = std::cmp::max(var.2, min_val);
@@ -913,15 +907,16 @@ fn increase_req_space(scope: &mut [Vec<Variable>], var_name: &str, min_val: usiz
     //     }
     // }
 
-    if let Some(var) = scope.last_mut()?.iter_mut().find(|(name, _, _)| name == var_name) {
-
+    if let Some(var) = scope
+        .last_mut()?
+        .iter_mut()
+        .find(|(name, _, _)| name == var_name)
+    {
         var.2 = std::cmp::max(var.2, min_val);
 
         Some(())
-
     } else {
-
-        let second_last = scope.len()-1;
+        let second_last = scope.len() - 1;
 
         // Todo will panic?
         increase_req_space(&mut scope[0..second_last], var_name, min_val)
@@ -930,193 +925,226 @@ fn increase_req_space(scope: &mut [Vec<Variable>], var_name: &str, min_val: usiz
 
 fn annostatements_to_bfasm(
     bf_array: &mut Vec<(Option<String>, EmptyType)>,
-    anno_states: &(Vec<AnnotatedStatement>, Vec<Variable>)
+    anno_states: &AnnotatedBlock,
 ) -> BfasmCode {
+    anno_states
+        .0
+        .iter()
+        .flat_map(|statement| -> BfasmCode {
+            match statement {
+                AnnotatedStatement::If(val, code) => {
+                    let target_val = bf_array.len();
 
-    anno_states.0.iter().flat_map(|statement| -> BfasmCode {
-        match statement {
-            AnnotatedStatement::If(val, code) => {
-                let target_val = bf_array.len();
+                    let mut bf_code = eval_value(val, bf_array);
 
-                let mut bf_code = eval_value(val, bf_array);
+                    assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
 
-                assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
+                    let if_code = annostatements_to_bfasm(bf_array, code);
 
-                let if_code = annostatements_to_bfasm(bf_array, code);
+                    bf_code.push(Box::new(move |bunf| bunf.bool_while(target_val, &if_code)));
 
-                bf_code.push(Box::new(move |bunf| {
-                    bunf.bool_while(target_val, &if_code)
-                }));
+                    bf_code
+                }
+                AnnotatedStatement::While(val, code) => {
+                    let target_val = bf_array.len();
 
-                bf_code
-            }
-            AnnotatedStatement::While(val, code) => {
+                    let mut bf_code = eval_value(val, bf_array);
 
-                let target_val = bf_array.len();
+                    assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
 
-                let mut bf_code = eval_value(val, bf_array);
+                    let mut while_code = annostatements_to_bfasm(bf_array, code);
 
-                assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
+                    // make sure the val is re calculated at the end of every while
+                    let mut bf_code_clone = eval_value(val, bf_array);
+                    assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
+                    let len = bf_array.len();
+                    bf_code_clone.push(Box::new(move |x| {x.clear(len); Ok(())}));
+                    while_code.append(&mut bf_code_clone);
 
-                let mut while_code = annostatements_to_bfasm(bf_array, code);
+                    bf_code.push(Box::new(move |bunf| {
+                        bunf.bool_while(target_val, &while_code)
+                    }));
 
-                // make sure the val is re calculated at the end of every while
-                let mut bf_code_clone = eval_value(val, bf_array);
-                assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
-                let len = bf_array.len();
-                bf_code_clone.push(Box::new(move|x| Ok(x.clear(len))));
-                while_code.append(&mut bf_code_clone);
+                    bf_code
+                }
+                AnnotatedStatement::Match(val, match_arms) => {
+                    let target_val = bf_array.len();
 
-                bf_code.push(Box::new(move |bunf| {
-                    bunf.bool_while(target_val, &while_code)
-                }));
+                    let mut code = eval_value(val, bf_array);
 
-                bf_code
-            }
-            AnnotatedStatement::Match(val, match_arms) => {
-                let target_val = bf_array.len();
+                    assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Char));
 
-                let mut code = eval_value(val, bf_array);
+                    // TODO validate match arms?
+                    // How could they have different results if from good rust
 
-                assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Char));
+                    let mut bf_match_arms: Vec<_> = match_arms
+                        .iter()
+                        .map(|(bf_type, anno_states)| {
+                            let Type::Char(char) = bf_type else { panic!() };
 
-                // TODO validate match arms?
-                // How could they have different results if from good rust
+                            (*char, annostatements_to_bfasm(bf_array, anno_states))
+                        })
+                        .collect();
 
-                let mut bf_match_arms: Vec<_> = match_arms.iter().map(|(bf_type, anno_states)| {
-                    let Type::Char(char) = bf_type else {panic!()};
+                    bf_match_arms.sort_by_key(|(val, _)| *val);
 
-                    (*char, annostatements_to_bfasm(bf_array, anno_states))
-                }).collect();
+                    code.push(Box::new(move |x| x.match_char(target_val, &bf_match_arms)));
 
-                bf_match_arms.sort_by_key(|(val, _)| *val);
+                    code
+                }
+                AnnotatedStatement::Function(func) => {
+                    match func {
+                        Function::Assign(var_name, val) => {
+                            if let Some((var_index, (_, var_type))) = search_bf(bf_array, var_name)
+                            {
+                                let var_type = var_type.clone();
 
-                code.push(Box::new(move |x| x.match_char(target_val, &bf_match_arms)));
+                                let mut code = eval_value(val, bf_array);
 
-                code
+                                assert_eq!(bf_array.pop().unwrap(), (None, var_type));
 
-            }
-            AnnotatedStatement::Function(func) => {
-                match func {
-                    Function::Assign(var_name, val) => {
+                                let val_pos = bf_array.len();
 
-                        if let Some((var_index, (_, var_type))) = search_bf(bf_array, var_name) {
-
-                            let var_type = var_type.clone();
-
-                            let mut code = eval_value(val, bf_array);
-
-                            assert_eq!(bf_array.pop().unwrap(), (None, var_type));
-
-                            let val_pos = bf_array.len();
-
-                            code.push(Box::new(move |x| {
+                                code.push(Box::new(move |x| {
                                     x.clear(var_index);
                                     x.move_type(val_pos, var_index)
                                 }));
 
-                            code
+                                code
+                            } else {
+                                // will only panic if there is a var in the statements but not in the Variables
+                                let (str, bf_type, spacing) = anno_states
+                                    .1
+                                    .iter()
+                                    .find(|(str, _, _)| str == var_name)
+                                    .unwrap();
 
-                        } else {
-                            // will only panic if there is a var in the statements but not in the Variables
-                            let (str, bf_type, spacing) = anno_states.1.iter().find(|(str, _, _)| str == var_name).unwrap();
+                                let code = eval_value(val, bf_array);
 
-                            let code = eval_value(val, bf_array);
+                                let len = bf_array.len() - 1;
 
-                            let len = bf_array.len() - 1;
+                                let (None, val_type) = &bf_array[len] else {
+                                    panic!()
+                                };
 
-                            let (None, val_type) = &bf_array[len] else {panic!()};
+                                assert_eq!(val_type, bf_type);
 
-                            assert_eq!(val_type, bf_type);
+                                bf_array[len].0 = Some(str.clone());
 
-                            bf_array[len].0 = Some(str.clone());
+                                (0..*spacing)
+                                    .for_each(|_| bf_array.push((None, EmptyType::EmptyCell)));
 
-                            (0..*spacing).for_each(|_| bf_array.push((None, EmptyType::EmptyCell)));
-
-                            code
-
+                                code
+                            }
                         }
+                        Function::IndexSet(var_name, array_index, array_val) => {
+                            let (var_index, (_, EmptyType::Array)) =
+                                search_bf(bf_array, var_name).unwrap()
+                            else {
+                                panic!()
+                            };
 
+                            let index_index = bf_array.len();
+
+                            let mut code = eval_value(array_index, bf_array);
+
+                            code.append(&mut eval_value(array_val, bf_array));
+
+                            assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
+                            assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
+
+                            code.push(Box::new(move |x| {
+                                x.move_type(index_index, var_index + 1)?;
+                                x.move_type(index_index + 1, var_index + 2)?;
+                                x.array_set_back(var_index)
+                            }));
+
+                            code
+                        }
+                        Function::Push(var_name, val) => {
+
+                            let (var_index, (_, EmptyType::Array)) = search_bf(bf_array, var_name).unwrap() else {
+                                    panic!()
+                            };
+
+                            let mut code = eval_value(val, bf_array);
+
+                            assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
+
+                            let val_target = bf_array.len();
+
+                            code.push(Box::new(move |x| {
+                                x.move_type(val_target, var_index+1)?;
+                                x.array_push(var_index)?;
+                                x.insert_ec(var_index+1, 2)
+                            }));
+
+                            code
+
+                        } // need to add push back to bfasm
+                        Function::PrintU32(val) => {
+                            let mut code = eval_value(val, bf_array);
+
+                            assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
+
+                            let print_target = bf_array.len();
+
+                            code.push(Box::new(move |x| {
+                                x.print(print_target)?;
+                                x.clear(print_target);
+                                Ok(())
+                            }));
+
+                            code
+                        }
+                        func => {
+                            panic!("{:?}", func)
+                        }
                     }
-                    Function::IndexSet(var_name, array_index, array_val) => {
-                        let (var_index, (_, EmptyType::Array)) = search_bf(bf_array, var_name).unwrap() else {panic!()};
-
-                        let index_index = bf_array.len();
-
-                        let mut code = eval_value(array_index, bf_array);
-
-                        code.append(&mut eval_value(array_val, bf_array));
-
-                        assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
-                        assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
-
-                        code.push(Box::new(move |x| {
-                            x.move_type(index_index, var_index+1)?;
-                            x.move_type(index_index+1, var_index+2)?;
-                            x.array_set_back(var_index)
-                        }));
-
-                        code
-                    }
-                    Function::Push(var, val) => {todo!()} // need to add push back to bfasm
-                    Function::PrintU32(val) => {
-                        let mut code = eval_value(val, bf_array);
-
-                        assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
-
-                        let print_target = bf_array.len();
-
-                        code.push(Box::new(move |x| {
-                            x.print(print_target)?;
-                            x.clear(print_target);
-                            Ok(())
-                        }));
-
-                        code
-                    }
-                    func => {panic!("{:?}", func)}
                 }
-
             }
-        }
-    }).collect()
-
+        })
+        .collect()
 }
 
 fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) -> BfasmCode {
-
     match value {
         Value::Func(func) => {
             match &**func {
                 func @ (Function::IndexStr(var_name, val) | Function::Index(var_name, val)) => {
                     let mut code = eval_value(val, bf_array);
 
-                    let (var_index, (_, EmptyType::Array | EmptyType::FString | EmptyType::IString))
-                        = search_bf(bf_array, var_name).unwrap() else {panic!()};
+                    let (
+                        var_index,
+                        (_, EmptyType::Array | EmptyType::FString | EmptyType::IString),
+                    ) = search_bf(bf_array, var_name).unwrap()
+                    else {
+                        panic!()
+                    };
 
-                    let val_index = bf_array.len()-1;
+                    let val_index = bf_array.len() - 1;
 
                     match func {
                         Function::IndexStr(_, _) => {
-                            code.push(
-                                Box::new(move |x| {
-                                    x.move_type(val_index, var_index + 1)?;
-                                    x.index_str(var_index)?;
-                                    x.move_type(var_index+1, val_index)
-                                }));
+                            code.push(Box::new(move |x| {
+                                x.move_type(val_index, var_index + 1)?;
+                                x.index_str(var_index)?;
+                                x.move_type(var_index + 1, val_index)
+                            }));
                         }
                         Function::Index(_, _) => {
-                            code.push(
-                                Box::new(move |x| {
-                                    x.move_type(val_index, var_index + 1)?;
-                                    x.array_index_back(var_index)?;
-                                    x.move_type(var_index+1, val_index)
-                                }));
+                            code.push(Box::new(move |x| {
+                                x.move_type(val_index, var_index + 1)?;
+                                x.array_index_back(var_index)?;
+                                x.move_type(var_index + 1, val_index)
+                            }));
                         }
-                        _ => {unreachable!()}
+                        _ => {
+                            unreachable!()
+                        }
                     };
 
-                    let len = bf_array.len()-1;
+                    let len = bf_array.len() - 1;
 
                     bf_array[len] = (None, EmptyType::Char);
 
@@ -1135,17 +1163,20 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                     match func {
                         Function::Add(_, _) => {
                             code.push(Box::new(move |x| x.add_u32(target_index)));
-                        },
+                        }
                         Function::Subtract(_, _) => {
                             code.push(Box::new(move |x| x.unsafe_sub_u32(target_index)));
-                        },
-                        _ => {unreachable!()}
+                        }
+                        _ => {
+                            unreachable!()
+                        }
                     };
 
                     code
                 }
-                func @ (Function::Equal(val1, val2) | Function::GreaterThan(val1, val2) | Function::LessThan(val1, val2)) => {
-
+                func @ (Function::Equal(val1, val2)
+                | Function::GreaterThan(val1, val2)
+                | Function::LessThan(val1, val2)) => {
                     // let (mut bf_func, oper): (Box<&fn(_, _) -> _>, fn(_, _) -> _) = match func {
                     //     Function::Equal(_, _) => (Box::new(&(bfasm::Bfasm::equals as fn(_, _) -> _)), PartialEq::eq),
                     //     Function::GreaterThan(_, _) => (Box::new(&(bfasm::Bfasm::greater_than as fn(_, _) -> _)), PartialOrd::gt),
@@ -1159,31 +1190,48 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     let target_index = bf_array.len() - 3;
 
-                    assert_eq!([(None, EmptyType::U32), (None, EmptyType::EmptyCell), (None, EmptyType::U32)],
-                        bf_array[target_index..bf_array.len()]);
+                    assert_eq!(
+                        [
+                            (None, EmptyType::U32),
+                            (None, EmptyType::EmptyCell),
+                            (None, EmptyType::U32)
+                        ],
+                        bf_array[target_index..bf_array.len()]
+                    );
 
                     match func {
                         Function::GreaterThan(_, _) => {
                             code.push(Box::new(move |x| Bfasm::greater_than(x, target_index)));
-                        },
+                        }
                         Function::LessThan(_, _) => {
                             code.push(Box::new(move |x| Bfasm::less_than(x, target_index)));
-                        },
+                        }
                         Function::Equal(_, _) => {
                             code.push(Box::new(move |x| Bfasm::equals(x, target_index)));
-                        },
-                        _ => {unreachable!()}
+                        }
+                        _ => {
+                            unreachable!()
+                        }
                     };
 
-                    bf_array.pop();bf_array.pop();bf_array.pop();
+                    bf_array.pop();
+                    bf_array.pop();
+                    bf_array.pop();
 
                     bf_array.push((None, EmptyType::Bool));
 
                     code
                 }
                 Function::Len(var_name) => {
-                    let (str_index, (_, EmptyType::IString | EmptyType::FString | EmptyType::Array)) = search_bf(bf_array, var_name)
-                        .unwrap() else {panic!()};
+                    let (
+                        str_index,
+                        (_, EmptyType::IString | EmptyType::FString | EmptyType::Array),
+                    ) = search_bf(bf_array, var_name).unwrap()
+                    else {
+                        panic!()
+                    };
+
+                    bf_array.push((None, EmptyType::U32));
 
                     let copy_index = str_index + 1;
 
@@ -1191,7 +1239,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     vec![
                         Box::new(move |x| x.get_len(str_index)),
-                        Box::new(move |x| x.move_type(copy_index, target_index))
+                        Box::new(move |x| x.move_type(copy_index, target_index)),
                     ]
                 }
                 Function::InputStr => {
@@ -1201,30 +1249,31 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     bf_array.push((None, EmptyType::IString));
 
-                    vec![
-                        Box::new(move |x| x.input(target_index, Type::from(String::new())))
-                    ]
+                    vec![Box::new(move |x| {
+                        x.input(target_index, Type::from(String::new()))
+                    })]
                 }
                 Function::NewArray => {
                     let target_index = bf_array.len();
 
                     bf_array.push((None, EmptyType::Array));
 
-                    vec![
-                        Box::new(move |x| x.input(target_index, Type::from(Vec::new())))
-                    ]
+                    vec![Box::new(move |x| {
+                        x.set(target_index, Type::from(Vec::new()))
+                    })]
                 }
                 Function::InputChar => {
                     let target_index = bf_array.len();
                     // todo? Add options for defaults
                     bf_array.push((None, EmptyType::Char));
 
-                    vec![
-                        Box::new(move |x| x.input(target_index, Type::from('a')))
-                    ]
+                    vec![Box::new(move |x| x.input(target_index, Type::from('a')))]
                 }
                 Function::CloneU32(var_name) => {
-                    let (target_u32, (_, EmptyType::U32)) = search_bf(bf_array, var_name).unwrap() else {panic!()};
+                    let (target_u32, (_, EmptyType::U32)) = search_bf(bf_array, var_name).unwrap()
+                    else {
+                        panic!()
+                    };
 
                     let target = target_u32;
 
@@ -1236,25 +1285,33 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     vec![
                         Box::new(move |x| x.copy_val(target)),
-                        Box::new(move |x| x.move_type(copy_target, goal_index))
+                        Box::new(move |x| x.move_type(copy_target, goal_index)),
                     ]
                 }
-                ref func => panic!("{:?}", func)
+                ref func => panic!("{:?}", func),
             }
         }
         Value::Static(val) => {
-
             let index = bf_array.len();
-            let var =  val.clone();
+            let var = val.clone();
+
+            bf_array.push((None, EmptyType::from(val)));
             vec![Box::new(move |x| x.set(index, var.clone()))]
         }
     }
 }
 
-fn search_bf<'a>(bf_array: &'a mut Vec<(Option<String>, EmptyType)>, var_name: &str)
-                 -> Option<(usize, &'a (Option<String>, EmptyType))> {
-    bf_array.iter().enumerate().find(
-        |(_, (x, _))| if let Some(str) = x { str == var_name} else {false})
+fn search_bf<'a>(
+    bf_array: &'a mut [(Option<String>, EmptyType)],
+    var_name: &str,
+) -> Option<(usize, &'a (Option<String>, EmptyType))> {
+    bf_array.iter().enumerate().find(|(_, (x, _))| {
+        if let Some(str) = x {
+            str == var_name
+        } else {
+            false
+        }
+    })
 }
 #[cfg(test)]
 mod tests {
@@ -1277,7 +1334,7 @@ mod tests {
 
         dbg!(vec);
 
-        dbg!(&anno);
+        // dbg!(&anno);
 
         let mut vec2 = Vec::new();
 
@@ -1292,8 +1349,6 @@ mod tests {
         code.iter().for_each(|oper| oper(&mut bfasm).unwrap());
 
         dbg!(bfasm);
-
-
 
         // println!("{:?}\n{:?}", tokens, statements)
 
