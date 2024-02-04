@@ -2,7 +2,7 @@
 mod bfasm;
 mod program;
 
-use crate::bfasm::{Bfasm, BfasmCode, EmptyType, Type};
+use crate::bfasm::{Bfasm, BfasmOps, EmptyType, Type};
 
 // #[derive(Debug)]
 // struct Variable (
@@ -926,11 +926,11 @@ fn increase_req_space(scope: &mut [Vec<Variable>], var_name: &str, min_val: usiz
 fn annostatements_to_bfasm(
     bf_array: &mut Vec<(Option<String>, EmptyType)>,
     anno_states: &AnnotatedBlock,
-) -> BfasmCode {
+) -> Vec<BfasmOps> {
     anno_states
         .0
         .iter()
-        .flat_map(|statement| -> BfasmCode {
+        .flat_map(|statement| -> Vec<BfasmOps> {
             match statement {
                 AnnotatedStatement::If(val, code) => {
                     let target_val = bf_array.len();
@@ -941,7 +941,8 @@ fn annostatements_to_bfasm(
 
                     let if_code = annostatements_to_bfasm(bf_array, code);
 
-                    bf_code.push(Box::new(move |bunf| bunf.bool_while(target_val, &if_code)));
+                    // bf_code.push(Box::new(move |bunf| bunf.bool_while(target_val, &if_code)));
+                    bf_code.push(BfasmOps::BoolWhile(target_val, if_code));
 
                     bf_code
                 }
@@ -955,15 +956,19 @@ fn annostatements_to_bfasm(
                     let mut while_code = annostatements_to_bfasm(bf_array, code);
 
                     // make sure the val is re calculated at the end of every while
-                    let mut bf_code_clone = eval_value(val, bf_array);
+                    let mut val_code = eval_value(val, bf_array);
                     assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
                     let len = bf_array.len();
-                    bf_code_clone.push(Box::new(move |x| {x.clear(len); Ok(())}));
-                    while_code.append(&mut bf_code_clone);
 
-                    bf_code.push(Box::new(move |bunf| {
-                        bunf.bool_while(target_val, &while_code)
-                    }));
+                    // bf_code_clone.push(Box::new(move |x| {x.clear(len); Ok(())}));
+                    val_code.insert(0, BfasmOps::Clear(len));
+                    while_code.append(&mut val_code);
+
+                    // bf_code.push(Box::new(move |bunf| {
+                    //     bunf.bool_while(target_val, &while_code)
+                    // }));
+
+                    bf_code.push(BfasmOps::BoolWhile(target_val, while_code));
 
                     bf_code
                 }
@@ -988,7 +993,9 @@ fn annostatements_to_bfasm(
 
                     bf_match_arms.sort_by_key(|(val, _)| *val);
 
-                    code.push(Box::new(move |x| x.match_char(target_val, &bf_match_arms)));
+                    // code.push(Box::new(move |x| x.match_char(target_val, &bf_match_arms)));
+
+                    code.push(BfasmOps::CharMatch(target_val, bf_match_arms));
 
                     code
                 }
@@ -1005,10 +1012,13 @@ fn annostatements_to_bfasm(
 
                                 let val_pos = bf_array.len();
 
-                                code.push(Box::new(move |x| {
-                                    x.clear(var_index);
-                                    x.move_type(val_pos, var_index)
-                                }));
+                                // code.push(Box::new(move |x| {
+                                //     x.clear(var_index);
+                                //     x.move_type(val_pos, var_index)
+                                // }));
+
+                                code.push(BfasmOps::Clear(var_index));
+                                code.push(BfasmOps::MoveType(val_pos, var_index));
 
                                 code
                             } else {
@@ -1053,11 +1063,15 @@ fn annostatements_to_bfasm(
                             assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
                             assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
 
-                            code.push(Box::new(move |x| {
-                                x.move_type(index_index, var_index + 1)?;
-                                x.move_type(index_index + 1, var_index + 2)?;
-                                x.array_set_back(var_index)
-                            }));
+                            // code.push(Box::new(move |x| {
+                            //     x.move_type(index_index, var_index + 1)?;
+                            //     x.move_type(index_index + 1, var_index + 2)?;
+                            //     x.array_set_back(var_index)
+                            // }));
+
+                            code.push(BfasmOps::MoveType(index_index, var_index+1));
+                            code.push(BfasmOps::MoveType(index_index+1, var_index+2));
+                            code.push(BfasmOps::ArraySet(var_index));
 
                             code
                         }
@@ -1071,13 +1085,17 @@ fn annostatements_to_bfasm(
 
                             assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
 
-                            let val_target = bf_array.len();
+                            let val_index = bf_array.len();
 
-                            code.push(Box::new(move |x| {
-                                x.move_type(val_target, var_index+1)?;
-                                x.array_push(var_index)?;
-                                x.insert_ec(var_index+1, 2)
-                            }));
+                            // code.push(Box::new(move |x| {
+                            //     x.move_type(val_target, var_index+1)?;
+                            //     x.array_push(var_index)?;
+                            //     x.insert_ec(var_index+1, 2)
+                            // }));
+
+                            code.push(BfasmOps::MoveType(val_index, var_index+1));
+                            code.push(BfasmOps::ArrayPush(var_index));
+                            code.push(BfasmOps::MoveType(var_index+1, 2));
 
                             code
 
@@ -1089,11 +1107,13 @@ fn annostatements_to_bfasm(
 
                             let print_target = bf_array.len();
 
-                            code.push(Box::new(move |x| {
-                                x.print(print_target)?;
-                                x.clear(print_target);
-                                Ok(())
-                            }));
+                            // code.push(Box::new(move |x| {
+                            //     x.print(print_target)?;
+                            //     x.clear(print_target);
+                            //     Ok(())
+                            // }));
+                            code.push(BfasmOps::Print(print_target));
+                            code.push(BfasmOps::Clear(print_target));
 
                             code
                         }
@@ -1107,7 +1127,7 @@ fn annostatements_to_bfasm(
         .collect()
 }
 
-fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) -> BfasmCode {
+fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) -> Vec<BfasmOps> {
     match value {
         Value::Func(func) => {
             match &**func {
@@ -1126,18 +1146,25 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     match func {
                         Function::IndexStr(_, _) => {
-                            code.push(Box::new(move |x| {
-                                x.move_type(val_index, var_index + 1)?;
-                                x.index_str(var_index)?;
-                                x.move_type(var_index + 1, val_index)
-                            }));
+                            // code.push(Box::new(move |x| {
+                            //     x.move_type(val_index, var_index + 1)?;
+                            //     x.index_str(var_index)?;
+                            //     x.move_type(var_index + 1, val_index)
+                            // }));
+                            code.push(BfasmOps::MoveType(val_index, var_index+1));
+                            code.push(BfasmOps::StrIndex(var_index));
+                            code.push(BfasmOps::MoveType(var_index + 1, val_index));
                         }
                         Function::Index(_, _) => {
-                            code.push(Box::new(move |x| {
-                                x.move_type(val_index, var_index + 1)?;
-                                x.array_index_back(var_index)?;
-                                x.move_type(var_index + 1, val_index)
-                            }));
+                            // code.push(Box::new(move |x| {
+                            //     x.move_type(val_index, var_index + 1)?;
+                            //     x.array_index_back(var_index)?;
+                            //     x.move_type(var_index + 1, val_index)
+                            // }));
+
+                            code.push(BfasmOps::MoveType(val_index, var_index+1));
+                            code.push(BfasmOps::ArrayIndex(var_index));
+                            code.push(BfasmOps::MoveType(var_index + 1, val_index));
                         }
                         _ => {
                             unreachable!()
@@ -1162,10 +1189,12 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     match func {
                         Function::Add(_, _) => {
-                            code.push(Box::new(move |x| x.add_u32(target_index)));
+                            // code.push(Box::new(move |x| x.add_u32(target_index)));
+                            code.push(BfasmOps::U32Add(target_index));
                         }
                         Function::Subtract(_, _) => {
-                            code.push(Box::new(move |x| x.unsafe_sub_u32(target_index)));
+                            // code.push(Box::new(move |x| x.unsafe_sub_u32(target_index)));
+                            code.push(BfasmOps::U32SubUnchecked(target_index));
                         }
                         _ => {
                             unreachable!()
@@ -1201,13 +1230,16 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     match func {
                         Function::GreaterThan(_, _) => {
-                            code.push(Box::new(move |x| Bfasm::greater_than(x, target_index)));
+                            // code.push(Box::new(move |x| Bfasm::greater_than(x, target_index)));
+                            code.push(BfasmOps::GreaterThan(target_index));
                         }
                         Function::LessThan(_, _) => {
-                            code.push(Box::new(move |x| Bfasm::less_than(x, target_index)));
+                            // code.push(Box::new(move |x| Bfasm::less_than(x, target_index)));
+                            code.push(BfasmOps::GreaterThan(target_index));
                         }
                         Function::Equal(_, _) => {
-                            code.push(Box::new(move |x| Bfasm::equals(x, target_index)));
+                            // code.push(Box::new(move |x| Bfasm::equals(x, target_index)));
+                            code.push(BfasmOps::GreaterThan(target_index));
                         }
                         _ => {
                             unreachable!()
@@ -1231,15 +1263,15 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                         panic!()
                     };
 
-                    bf_array.push((None, EmptyType::U32));
-
-                    let copy_index = str_index + 1;
-
                     let target_index = bf_array.len();
 
+                    bf_array.push((None, EmptyType::U32));
+
                     vec![
-                        Box::new(move |x| x.get_len(str_index)),
-                        Box::new(move |x| x.move_type(copy_index, target_index)),
+                        // Box::new(move |x| x.get_len(str_index)),
+                        // Box::new(move |x| x.move_type(copy_index, target_index)),
+                        BfasmOps::Len(str_index),
+                        BfasmOps::MoveType(str_index+1, target_index)
                     ]
                 }
                 Function::InputStr => {
@@ -1249,43 +1281,46 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     bf_array.push((None, EmptyType::IString));
 
-                    vec![Box::new(move |x| {
-                        x.input(target_index, Type::from(String::new()))
-                    })]
+                    // vec![Box::new(move |x| {
+                    //     x.input(target_index, Type::from(String::new()))
+                    // })]
+
+                    vec![BfasmOps::Input(target_index, Type::from(String::new()))]
                 }
                 Function::NewArray => {
                     let target_index = bf_array.len();
 
                     bf_array.push((None, EmptyType::Array));
 
-                    vec![Box::new(move |x| {
-                        x.set(target_index, Type::from(Vec::new()))
-                    })]
+                    // vec![Box::new(move |x| {
+                    //     x.set(target_index, Type::from(Vec::new()))
+                    // })]
+
+                    vec![BfasmOps::Set(target_index, Type::from(Vec::new()))]
                 }
                 Function::InputChar => {
                     let target_index = bf_array.len();
                     // todo? Add options for defaults
                     bf_array.push((None, EmptyType::Char));
 
-                    vec![Box::new(move |x| x.input(target_index, Type::from('a')))]
+                    // vec![Box::new(move |x| x.input(target_index, Type::from('a')))]
+                    vec![BfasmOps::Input(target_index, Type::from('a'))]
                 }
                 Function::CloneU32(var_name) => {
-                    let (target_u32, (_, EmptyType::U32)) = search_bf(bf_array, var_name).unwrap()
+                    let (target, (_, EmptyType::U32)) = search_bf(bf_array, var_name).unwrap()
                     else {
                         panic!()
                     };
-
-                    let target = target_u32;
-
-                    let copy_target = target_u32 + 1;
 
                     let goal_index = bf_array.len();
 
                     bf_array.push((None, EmptyType::U32));
 
                     vec![
-                        Box::new(move |x| x.copy_val(target)),
-                        Box::new(move |x| x.move_type(copy_target, goal_index)),
+                        // Box::new(move |x| x.copy_val(target)),
+                        // Box::new(move |x| x.move_type(copy_target, goal_index)),
+                        BfasmOps::CopyVal(target),
+                        BfasmOps::MoveType(target+1, goal_index),
                     ]
                 }
                 ref func => panic!("{:?}", func),
@@ -1296,7 +1331,8 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
             let var = val.clone();
 
             bf_array.push((None, EmptyType::from(val)));
-            vec![Box::new(move |x| x.set(index, var.clone()))]
+            // vec![Box::new(move |x| x.set(index, var.clone()))]
+            vec![BfasmOps::Set(index, var.clone())]
         }
     }
 }
@@ -1312,6 +1348,19 @@ fn search_bf<'a>(
             false
         }
     })
+}
+
+fn bunf(str: &str) -> Vec<BfasmOps> {
+
+    let tokens = tokenize(str).unwrap();
+
+    let statements = tokens_to_statements(&tokens).unwrap();
+
+    let anno = annotate_statements(&statements, &mut Vec::new());
+
+    let code = annostatements_to_bfasm(&mut Vec::new(), &anno);
+
+    code
 }
 #[cfg(test)]
 mod tests {
@@ -1334,7 +1383,7 @@ mod tests {
 
         dbg!(vec);
 
-        // dbg!(&anno);
+        dbg!(&anno);
 
         let mut vec2 = Vec::new();
 
@@ -1346,13 +1395,35 @@ mod tests {
 
         let mut bfasm = Bfasm::new();
 
-        code.iter().for_each(|oper| oper(&mut bfasm).unwrap());
+        // code.iter().for_each(|oper| oper(&mut bfasm).unwrap());
+        BfasmOps::exec(&code, &mut bfasm).unwrap();
 
         dbg!(bfasm);
 
-        // println!("{:?}\n{:?}", tokens, statements)
+        println!("{:?}\n{:?}", tokens, statements);
 
-        // Statement::print(&statements)
+        Statement::print(&statements)
+    }
+
+    #[test]
+    fn anno_test() {
+        let code = "\
+        let x = 5;\
+        let y = 5;\
+        let z = 0;\
+        while x > 0 {\
+            while 0 < y {\
+                z += 1;\
+            }\
+        }";
+
+        let x = bunf(code);
+
+        let mut bfasm = Bfasm::new();
+
+        x.iter().for_each(|x| dbg!(x).exec_instruct(&mut bfasm).unwrap());
+
+        assert!(bfasm.test_run().unwrap())
     }
 
     #[test]
