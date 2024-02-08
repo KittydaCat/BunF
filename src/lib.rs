@@ -931,7 +931,7 @@ fn annostatements_to_bfasm(
         .0
         .iter()
         .flat_map(|statement| -> Vec<BfasmOps> {
-            match statement {
+            let code = match dbg!(statement) {
                 AnnotatedStatement::If(val, code) => {
                     let target_val = bf_array.len();
 
@@ -949,15 +949,15 @@ fn annostatements_to_bfasm(
                 AnnotatedStatement::While(val, code) => {
                     let target_val = bf_array.len();
 
-                    let mut bf_code = eval_value(val, bf_array);
+                    let mut val_code = eval_value(val, bf_array);
 
-                    assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
+                    let mut bf_code = val_code.clone();
 
                     let mut while_code = annostatements_to_bfasm(bf_array, code);
 
-                    // make sure the val is re calculated at the end of every while
-                    let mut val_code = eval_value(val, bf_array);
                     assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
+
+                    // make sure the val is re calculated at the end of every while
                     let len = bf_array.len();
 
                     // bf_code_clone.push(Box::new(move |x| {x.clear(len); Ok(())}));
@@ -1122,7 +1122,9 @@ fn annostatements_to_bfasm(
                         }
                     }
                 }
-            }
+            };
+
+            dbg!(code)
         })
         .collect()
 }
@@ -1130,7 +1132,7 @@ fn annostatements_to_bfasm(
 fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) -> Vec<BfasmOps> {
     match value {
         Value::Func(func) => {
-            match &**func {
+            match dbg!(&**func) {
                 func @ (Function::IndexStr(var_name, val) | Function::Index(var_name, val)) => {
                     let mut code = eval_value(val, bf_array);
 
@@ -1383,7 +1385,7 @@ mod tests {
 
         dbg!(vec);
 
-        dbg!(&anno);
+        // dbg!(&anno);
 
         let mut vec2 = Vec::new();
 
@@ -1414,14 +1416,16 @@ mod tests {
         while x > 0 {\
             while 0 < y {\
                 z += 1;\
+                y -= 1;
             }\
+            x -= 1;
         }";
 
-        let x = bunf(code);
+        let x = dbg!(bunf(code));
 
         let mut bfasm = Bfasm::new();
 
-        x.iter().for_each(|x| dbg!(x).exec_instruct(&mut bfasm).unwrap());
+        x.iter().for_each(|x| x.exec_instruct(&mut bfasm).unwrap());
 
         assert!(bfasm.test_run().unwrap())
     }

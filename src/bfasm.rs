@@ -203,7 +203,7 @@ pub enum BfasmError {
     TypeMismatch(Vec<EmptyType>, Vec<Type>),
     InvalidIndex(usize),
     InvalidStringIndex(usize),
-    InvalidMatchArm(usize),
+    InvalidMatchArm(usize, Option<Box<BfasmError>>),
 }
 
 impl Display for BfasmError {
@@ -292,9 +292,14 @@ impl BfasmOps {
     }
 
 
-    pub(crate) fn exec(code: &[BfasmOps], bfasm: &mut Bfasm) -> Result<(), BfasmError> {
-        code.iter().map(|oper| oper.exec_instruct(bfasm)).collect::<Result<(), BfasmError>>()?;
+    pub(crate) fn exec(code: &[BfasmOps], bfasm: &mut Bfasm) -> Result<(), (usize, BfasmError)> {
+
+        for (index, oper) in code.iter().enumerate() {
+            oper.exec_instruct(bfasm).map_err(|err| (index, err))?;
+        }
+
         Ok(())
+
     }
 }
 
@@ -652,9 +657,9 @@ impl Bfasm {
                 self.array[target_index] = move_val;
 
                 let to_target = self.traverse(index, target_index);
-                let to_goal = self.traverse(target_index, index);
+                let to_index = self.traverse(target_index, index);
 
-                write!(self.output, "[-{to_goal}+{to_target}]").expect("TODO: panic message");
+                write!(self.output, "[-{to_target}+{to_index}]").expect("TODO: panic message");
 
                 Ok(())
             }
@@ -1215,7 +1220,7 @@ impl Bfasm {
         let mut init_val = 0;
         for (index, (val, _)) in match_arms.iter().enumerate() {
             if init_val >= *val {
-                return Err(BfasmError::InvalidMatchArm(index));
+                return Err(BfasmError::InvalidMatchArm(index, None));
             };
 
             init_val = *val
@@ -1241,9 +1246,11 @@ impl Bfasm {
                 // after the func, move to the correct location to continue matching
                 let bunf_index = self.index + 1;
 
-                let Some(str) = self.test_arm(code, bunf_index) else {
-                    return Err(BfasmError::InvalidMatchArm(match_index));
-                };
+                // let Ok(str) = self.test_arm(code, bunf_index) else {
+                //     return Err(BfasmError::InvalidMatchArm(match_index));
+                // };
+                let str = self.test_arm(code, bunf_index)
+                    .map_err(|err| BfasmError::InvalidMatchArm(match_index, err))?;
 
                 if *cond == val {
                     let output = self.output.clone(); // Very inefficient TODO memswap?
@@ -1289,7 +1296,8 @@ impl Bfasm {
         Ok(())
     }
 
-    fn test_arm(&self, code: &[BfasmOps], ret_index: usize) -> Option<String> {
+    // Bfasm Err is boxed to prevent recursion might move boxing to caller if caller wants to handel error
+    fn test_arm(&mut self, code: &[BfasmOps], ret_index: usize) -> Result<String, Option<Box<BfasmError>>> {
         let mut bfasm = Bfasm {
             array: self.array.clone(),
             output: "".to_string(),
@@ -1302,14 +1310,20 @@ impl Bfasm {
         //     oper.exec_instruct(&mut bfasm).ok()?;
         // }
 
-        BfasmOps::exec(code, &mut bfasm).ok()?;
+        BfasmOps::exec(code, &mut bfasm).unwrap();
 
         bfasm.move_to(ret_index);
 
-        if EmptyType::from_vec(&self.array) == EmptyType::from_vec(&bfasm.array) {
-            Some(bfasm.output)
+        while bfasm.array.len() > self.array.len() {
+            self.array.push(Type::EmptyCell);
+        }
+
+        assert_eq!(bfasm.array.len(), self.array.len());
+
+        if dbg!(EmptyType::from_vec(&self.array)) == dbg!(EmptyType::from_vec(&bfasm.array)) {
+            Ok(bfasm.output)
         } else {
-            None
+            Err(None)
         }
     }
 
@@ -1325,7 +1339,8 @@ impl Bfasm {
 
             let str = self
                 .test_arm(code, index)
-                .ok_or(BfasmError::InvalidMatchArm(0))?;
+                // .ok_or(BfasmError::InvalidMatchArm(0))?;
+                .map_err(|err| BfasmError::InvalidMatchArm(0, err))?;
 
             if cond {
                 let output = self.output.clone();
@@ -1363,8 +1378,9 @@ impl Bfasm {
             let mut cond = *bool;
 
             let str = self
-                .test_arm(code, index)
-                .ok_or(BfasmError::InvalidMatchArm(0))?;
+                .test_arm(dbg!(code), index)
+                .unwrap();
+                // .ok_or(BfasmError::InvalidMatchArm(0))?;
 
             let output = self.output.clone();
 
@@ -1380,8 +1396,9 @@ impl Bfasm {
                 if let Type::Bool(bool) = self.get(index) {
                     cond = *bool;
                 } else {
+                    panic!();
                     // only tests if it will change the target maybe expand to check all of the array?
-                    return Err(BfasmError::InvalidMatchArm(0));
+                    return Err(BfasmError::InvalidMatchArm(0, None));
                 }
             }
 
