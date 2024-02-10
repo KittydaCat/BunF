@@ -1,35 +1,29 @@
-pub fn input_char() -> u32 {
-    let mut line = String::new();
-
-    // use std::io::Write;
+pub fn input_u32() -> u32 {
+    // let mut line = String::new();
     //
-    // let _ = std::io::stdout().flush();
+    // std::io::stdin().read_line(&mut line).unwrap();
     //
-    // let _ = std::io::stdin().read_line(&mut line);
+    // return line.chars().next().unwrap() as u32;
 
-    std::io::stdin().read_line(&mut line).unwrap();
-
-    return line.chars().next().unwrap() as u32;
+    'a' as u32
 }
 
 pub fn input_str() -> String {
-    let mut line = String::new();
+    // let mut line = String::new();
     //
-    // // std::io::stdin().read_to_end()
+    // use std::io::{stdin, stdout, Write};
     //
-    // std::io::stdin().read_line(&mut line).unwrap();
+    // print!("Please enter some text: ");
+    // let _ = stdout().flush();
+    // stdin()
+    //     .read_line(&mut line)
+    //     .expect("Did not enter a correct string");
+    //
+    // println!("You typed: {}", &line);
+    //
+    // line
 
-    use std::io::{stdin, stdout, Write};
-
-    print!("Please enter some text: ");
-    let _ = stdout().flush();
-    stdin()
-        .read_line(&mut line)
-        .expect("Did not enter a correct string");
-
-    println!("You typed: {}", &line);
-
-    line
+    String::from("+++[->+<]")
 }
 
 pub fn new_array() -> Vec<u32> {

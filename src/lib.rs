@@ -32,7 +32,7 @@ enum Function {
     Push(String, Value),
     InputStr,
     NewArray,
-    InputChar,
+    InputU32,
     PrintU32(Value),
     CloneU32(String),
 }
@@ -44,16 +44,16 @@ impl Function {
             Function::Index(_, _) => Some(EmptyType::U32),
             Function::IndexSet(_, _, _) => None,
             Function::Assign(_, _) => None,
-            Function::Add(_, _) => Some(EmptyType::Bool),
-            Function::Subtract(_, _) => Some(EmptyType::Bool),
+            Function::Add(_, _) => Some(EmptyType::U32),
+            Function::Subtract(_, _) => Some(EmptyType::U32),
             Function::Equal(_, _) => Some(EmptyType::Bool),
             Function::GreaterThan(_, _) => Some(EmptyType::Bool),
             Function::LessThan(_, _) => Some(EmptyType::Bool),
-            Function::Len(_) => Some(EmptyType::Bool),
+            Function::Len(_) => Some(EmptyType::U32),
             Function::Push(_, _) => None,
             Function::InputStr => Some(EmptyType::IString),
             Function::NewArray => Some(EmptyType::Array),
-            Function::InputChar => Some(EmptyType::Char),
+            Function::InputU32 => Some(EmptyType::Char),
             Function::PrintU32(_) => None,
             Function::CloneU32(_) => Some(EmptyType::U32),
         }
@@ -71,9 +71,9 @@ impl Function {
                 assert_eq!(value, None);
                 Function::NewArray
             }
-            "input_char" => {
+            "input_u32" => {
                 assert_eq!(value, None);
-                Function::InputChar
+                Function::InputU32
             }
             "print_u32" => {
                 if let Some(val) = value {
@@ -121,9 +121,9 @@ impl Function {
             Function::LessThan(_, _) => Some(4),
             Function::Len(_) => Some(2),
             Function::Push(_, _) => Some(2),
-            Function::InputStr => None,     // ???
-            Function::NewArray => None,     // 3?
-            Function::InputChar => Some(0), // 1?
+            Function::InputStr => None,    // ???
+            Function::NewArray => None,    // 3?
+            Function::InputU32 => Some(0), // 1?
             Function::PrintU32(_) => Some(0),
             Function::CloneU32(_) => Some(2),
             Function::IndexStr(_, _) => Some(2),
@@ -526,12 +526,6 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
                         index += 1;
                     }
 
-                    // let Value::Func(func, args) = dbg!(tokens_to_value(dbg!(&tokens[starting_index-1..index])).unwrap()) else {
-                    //     todo!()
-                    // };
-                    //
-                    // statements.push(Statement::Function(func, args));
-
                     let token = &tokens[starting_index - 1..index];
 
                     match tokens_to_value(token) {
@@ -539,18 +533,6 @@ fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize
 
                         val => panic!("{:?}", val),
                     }
-
-                    // statements.push(Statement::Function(
-                    //     func_name.clone(),
-                    //     if dbg!(index) != dbg!(starting_index) {
-                    //         vec![
-                    //             Value::Var(var.clone()),
-                    //             tokens_to_value(&tokens[index..starting_index]).unwrap()
-                    //         ]
-                    //     } else {
-                    //         vec![Value::Var(var.clone())]
-                    //     }
-                    // ));
 
                     index += 1;
                 } else {
@@ -797,10 +779,7 @@ fn str_to_type(value: &str) -> Option<Type> {
 }
 
 // lables each variable with the amount of space it needs
-fn annotate_statements(
-    statements: &[Statement],
-    scope: &mut Vec<Vec<Variable>>,
-) -> AnnotatedBlock {
+fn annotate_statements(statements: &[Statement], scope: &mut Vec<Vec<Variable>>) -> AnnotatedBlock {
     scope.push(Vec::new());
 
     let anno_states = statements
@@ -893,7 +872,7 @@ fn annotate_func(func: &Function, scope: &mut [Vec<Variable>]) {
             annotate_value(val2, scope);
             increase_req_space(scope, var, 2).unwrap();
         }
-        Function::InputStr | Function::NewArray | Function::InputChar => {}
+        Function::InputStr | Function::NewArray | Function::InputU32 => {}
     }
 }
 
@@ -927,12 +906,14 @@ fn annostatements_to_bfasm(
     bf_array: &mut Vec<(Option<String>, EmptyType)>,
     anno_states: &AnnotatedBlock,
 ) -> Vec<BfasmOps> {
-    anno_states
+    let mut bfasm_ops: Vec<_> = anno_states
         .0
         .iter()
         .flat_map(|statement| -> Vec<BfasmOps> {
-            let code = match dbg!(statement) {
+            let code = match statement {
                 AnnotatedStatement::If(val, code) => {
+                    assert_eq!(val.bftype(), EmptyType::Bool);
+
                     let target_val = bf_array.len();
 
                     let mut bf_code = eval_value(val, bf_array);
@@ -942,15 +923,16 @@ fn annostatements_to_bfasm(
                     let if_code = annostatements_to_bfasm(bf_array, code);
 
                     // bf_code.push(Box::new(move |bunf| bunf.bool_while(target_val, &if_code)));
-                    bf_code.push(BfasmOps::BoolWhile(target_val, if_code));
+                    bf_code.push(BfasmOps::BoolIf(target_val, if_code));
 
                     bf_code
                 }
                 AnnotatedStatement::While(val, code) => {
+                    assert_eq!(val.bftype(), EmptyType::Bool);
+
                     let target_val = bf_array.len();
 
                     let mut val_code = eval_value(val, bf_array);
-
                     let mut bf_code = val_code.clone();
 
                     let mut while_code = annostatements_to_bfasm(bf_array, code);
@@ -958,10 +940,9 @@ fn annostatements_to_bfasm(
                     assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
 
                     // make sure the val is re calculated at the end of every while
-                    let len = bf_array.len();
 
                     // bf_code_clone.push(Box::new(move |x| {x.clear(len); Ok(())}));
-                    val_code.insert(0, BfasmOps::Clear(len));
+                    val_code.insert(0, BfasmOps::Clear(target_val));
                     while_code.append(&mut val_code);
 
                     // bf_code.push(Box::new(move |bunf| {
@@ -973,6 +954,8 @@ fn annostatements_to_bfasm(
                     bf_code
                 }
                 AnnotatedStatement::Match(val, match_arms) => {
+                    assert_eq!(val.bftype(), EmptyType::Char);
+
                     let target_val = bf_array.len();
 
                     let mut code = eval_value(val, bf_array);
@@ -1069,16 +1052,17 @@ fn annostatements_to_bfasm(
                             //     x.array_set_back(var_index)
                             // }));
 
-                            code.push(BfasmOps::MoveType(index_index, var_index+1));
-                            code.push(BfasmOps::MoveType(index_index+1, var_index+2));
+                            code.push(BfasmOps::MoveType(index_index, var_index + 1));
+                            code.push(BfasmOps::MoveType(index_index + 1, var_index + 2));
                             code.push(BfasmOps::ArraySet(var_index));
 
                             code
                         }
                         Function::Push(var_name, val) => {
-
-                            let (var_index, (_, EmptyType::Array)) = search_bf(bf_array, var_name).unwrap() else {
-                                    panic!()
+                            let (var_index, (_, EmptyType::Array)) =
+                                search_bf(bf_array, var_name).unwrap()
+                            else {
+                                panic!()
                             };
 
                             let mut code = eval_value(val, bf_array);
@@ -1093,12 +1077,11 @@ fn annostatements_to_bfasm(
                             //     x.insert_ec(var_index+1, 2)
                             // }));
 
-                            code.push(BfasmOps::MoveType(val_index, var_index+1));
+                            code.push(BfasmOps::MoveType(val_index, var_index + 1));
                             code.push(BfasmOps::ArrayPush(var_index));
-                            code.push(BfasmOps::MoveType(var_index+1, 2));
+                            code.push(BfasmOps::InsertEC(var_index + 1, 2));
 
                             code
-
                         } // need to add push back to bfasm
                         Function::PrintU32(val) => {
                             let mut code = eval_value(val, bf_array);
@@ -1124,16 +1107,63 @@ fn annostatements_to_bfasm(
                 }
             };
 
-            dbg!(code)
+            code
         })
-        .collect()
+        .collect();
+
+    // remove block variables
+    let mut index = bf_array.len() - 1;
+
+    loop {
+        match bf_array.get(index) {
+            None => break,
+            Some((None, EmptyType::EmptyCell)) => {
+                index -= 1;
+            }
+            Some((Some(found_var), _)) => {
+                // let x = search_bf(bf_array, str).unwrap();
+
+                // if we find a var and its in our scope
+                // if anno_states.1.iter()
+                //     .find(|(anno_var, anno_type, size)| (anno_var == found_var) && (anno_type == found_type)).is_some(){}
+
+                if anno_states
+                    .1
+                    .iter()
+                    .find(|(anno_var, _, _)| anno_var == found_var)
+                    .is_some()
+                {
+                    bfasm_ops.push(BfasmOps::Clear(index));
+
+                    while bf_array.len() != index {
+                        bf_array.pop();
+                    }
+
+                    if index == 0 {
+                        break;
+                    } else {
+                        index -= 1;
+                    }
+                } else {
+                    break;
+                }
+            }
+            Some((None, _)) => {
+                break;
+            }
+        }
+    }
+
+    bfasm_ops
 }
 
 fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) -> Vec<BfasmOps> {
     match value {
         Value::Func(func) => {
-            match dbg!(&**func) {
+            match &**func {
                 func @ (Function::IndexStr(var_name, val) | Function::Index(var_name, val)) => {
+                    assert_eq!(val.bftype(), EmptyType::U32);
+
                     let mut code = eval_value(val, bf_array);
 
                     let (
@@ -1153,9 +1183,11 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                             //     x.index_str(var_index)?;
                             //     x.move_type(var_index + 1, val_index)
                             // }));
-                            code.push(BfasmOps::MoveType(val_index, var_index+1));
+                            code.push(BfasmOps::MoveType(val_index, var_index + 1));
                             code.push(BfasmOps::StrIndex(var_index));
                             code.push(BfasmOps::MoveType(var_index + 1, val_index));
+
+                            bf_array[val_index] = (None, EmptyType::Char);
                         }
                         Function::Index(_, _) => {
                             // code.push(Box::new(move |x| {
@@ -1164,22 +1196,23 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                             //     x.move_type(var_index + 1, val_index)
                             // }));
 
-                            code.push(BfasmOps::MoveType(val_index, var_index+1));
+                            code.push(BfasmOps::MoveType(val_index, var_index + 1));
                             code.push(BfasmOps::ArrayIndex(var_index));
                             code.push(BfasmOps::MoveType(var_index + 1, val_index));
+
+                            bf_array[val_index] = (None, EmptyType::U32);
                         }
                         _ => {
                             unreachable!()
                         }
                     };
 
-                    let len = bf_array.len() - 1;
-
-                    bf_array[len] = (None, EmptyType::Char);
-
                     code
                 }
                 func @ (Function::Add(val1, val2) | Function::Subtract(val1, val2)) => {
+                    assert_eq!(val1.bftype(), EmptyType::U32);
+                    assert_eq!(val2.bftype(), EmptyType::U32);
+
                     let mut code = eval_value(val1, bf_array);
 
                     code.append(&mut eval_value(val2, bf_array));
@@ -1208,12 +1241,8 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                 func @ (Function::Equal(val1, val2)
                 | Function::GreaterThan(val1, val2)
                 | Function::LessThan(val1, val2)) => {
-                    // let (mut bf_func, oper): (Box<&fn(_, _) -> _>, fn(_, _) -> _) = match func {
-                    //     Function::Equal(_, _) => (Box::new(&(bfasm::Bfasm::equals as fn(_, _) -> _)), PartialEq::eq),
-                    //     Function::GreaterThan(_, _) => (Box::new(&(bfasm::Bfasm::greater_than as fn(_, _) -> _)), PartialOrd::gt),
-                    //     Function::LessThan(_, _) => (Box::new(&(bfasm::Bfasm::less_than as fn(_, _) -> _)), PartialOrd::lt),
-                    //     _ => unreachable!()
-                    // };
+                    assert_eq!(val1.bftype(), EmptyType::U32);
+                    assert_eq!(val2.bftype(), EmptyType::U32);
 
                     let mut code = eval_value(val1, bf_array);
                     bf_array.push((None, EmptyType::EmptyCell));
@@ -1241,7 +1270,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                         }
                         Function::Equal(_, _) => {
                             // code.push(Box::new(move |x| Bfasm::equals(x, target_index)));
-                            code.push(BfasmOps::GreaterThan(target_index));
+                            code.push(BfasmOps::Equals(target_index));
                         }
                         _ => {
                             unreachable!()
@@ -1273,7 +1302,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                         // Box::new(move |x| x.get_len(str_index)),
                         // Box::new(move |x| x.move_type(copy_index, target_index)),
                         BfasmOps::Len(str_index),
-                        BfasmOps::MoveType(str_index+1, target_index)
+                        BfasmOps::MoveType(str_index + 1, target_index),
                     ]
                 }
                 Function::InputStr => {
@@ -1287,7 +1316,10 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                     //     x.input(target_index, Type::from(String::new()))
                     // })]
 
-                    vec![BfasmOps::Input(target_index, Type::from(String::new()))]
+                    vec![BfasmOps::Input(
+                        target_index,
+                        Type::IString(Vec::from("+".as_bytes())),
+                    )]
                 }
                 Function::NewArray => {
                     let target_index = bf_array.len();
@@ -1300,13 +1332,16 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     vec![BfasmOps::Set(target_index, Type::from(Vec::new()))]
                 }
-                Function::InputChar => {
+                Function::InputU32 => {
                     let target_index = bf_array.len();
                     // todo? Add options for defaults
-                    bf_array.push((None, EmptyType::Char));
+                    bf_array.push((None, EmptyType::U32));
 
                     // vec![Box::new(move |x| x.input(target_index, Type::from('a')))]
-                    vec![BfasmOps::Input(target_index, Type::from('a'))]
+                    vec![
+                        BfasmOps::Input(target_index, Type::from('a')),
+                        BfasmOps::CharToU32(target_index),
+                    ]
                 }
                 Function::CloneU32(var_name) => {
                     let (target, (_, EmptyType::U32)) = search_bf(bf_array, var_name).unwrap()
@@ -1322,7 +1357,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                         // Box::new(move |x| x.copy_val(target)),
                         // Box::new(move |x| x.move_type(copy_target, goal_index)),
                         BfasmOps::CopyVal(target),
-                        BfasmOps::MoveType(target+1, goal_index),
+                        BfasmOps::MoveType(target + 1, goal_index),
                     ]
                 }
                 ref func => panic!("{:?}", func),
@@ -1353,7 +1388,6 @@ fn search_bf<'a>(
 }
 
 fn bunf(str: &str) -> Vec<BfasmOps> {
-
     let tokens = tokenize(str).unwrap();
 
     let statements = tokens_to_statements(&tokens).unwrap();
@@ -1367,6 +1401,7 @@ fn bunf(str: &str) -> Vec<BfasmOps> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::program::main;
     use std::fs;
 
     #[test]
@@ -1383,28 +1418,35 @@ mod tests {
 
         let anno = annotate_statements(&statements, &mut vec);
 
-        dbg!(vec);
-
-        // dbg!(&anno);
-
         let mut vec2 = Vec::new();
 
-        let code = annostatements_to_bfasm(&mut vec2, &anno);
+        let code = dbg!(annostatements_to_bfasm(&mut vec2, &anno));
 
-        dbg!(vec2);
+        assert!(vec2.is_empty());
 
         // let bfasm = code.iter().fold(Bfasm::new(), |bfasm, oper| {oper(&mut bfasm).unwrap(); bfasm});
 
         let mut bfasm = Bfasm::new();
 
         // code.iter().for_each(|oper| oper(&mut bfasm).unwrap());
-        BfasmOps::exec(&code, &mut bfasm).unwrap();
+        // BfasmOps::exec(&code, &mut bfasm).unwrap();
+        for op in &code {
+            dbg!(op).exec_instruct(&mut bfasm).unwrap();
+            dbg!(&bfasm.array);
+        }
 
-        dbg!(bfasm);
+        dbg!(&bfasm);
 
-        println!("{:?}\n{:?}", tokens, statements);
+        assert!(bfasm.test_run().unwrap())
 
-        Statement::print(&statements)
+        // println!("{:?}\n{:?}", tokens, statements);
+        //
+        // Statement::print(&statements)
+    }
+
+    #[test]
+    fn norm_program() {
+        main()
     }
 
     #[test]
@@ -1421,7 +1463,7 @@ mod tests {
             x -= 1;
         }";
 
-        let x = dbg!(bunf(code));
+        let x = bunf(code);
 
         let mut bfasm = Bfasm::new();
 

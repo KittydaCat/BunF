@@ -198,26 +198,43 @@ impl From<&Type> for EmptyType {
     }
 }
 
+// If a non type error is thrown the array types should still be changed and filled with dummy vals maybe options?
 #[derive(Debug, Clone)]
 pub enum BfasmError {
     TypeMismatch(Vec<EmptyType>, Vec<Type>),
-    InvalidIndex(usize),
+    // InvalidIndex(usize),
     InvalidStringIndex(usize),
     InvalidMatchArm(usize, Option<Box<BfasmError>>),
+    ErrorInMatch(usize, Box<BfasmError>),
+    Underflow,
 }
 
 impl Display for BfasmError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&match self {
+        match self {
             TypeMismatch(expected, found) => {
-                format!("Type Mismatch: Expected: {:?} Found: {:?}", expected, found)
+                write!(
+                    f,
+                    "Type Mismatch: Expected: {:?} Found: {:?}",
+                    expected, found
+                )
             }
-            BfasmError::InvalidIndex(index) => format!("Invalid array index of {index}"),
-            BfasmError::InvalidStringIndex(index) => format!("Invalid string index of {index}"),
-            _ => {
-                todo!()
+            // BfasmError::InvalidIndex(index) => write!(f, "Invalid array index of {index}"),
+            BfasmError::InvalidStringIndex(index) => write!(f, "Invalid string index of {index}"),
+            BfasmError::InvalidMatchArm(index, err) => {
+                if let Some(err) = err {
+                    write!(f, "Invalid match arm {index} with Error: {}", **err)
+                } else {
+                    write!(f, "Invalid match arm {index} with mismatching array types")
+                }
             }
-        })
+            BfasmError::Underflow => {
+                write!(f, "Underflow")
+            }
+            BfasmError::ErrorInMatch(index, err) => {
+                write!(f, "Error {err} inside block at index: {index}")
+            }
+        }
     }
 }
 
@@ -251,6 +268,7 @@ pub enum BfasmOps {
     GreaterThan(usize),
     LessThan(usize),
     Equals(usize),
+    CharToU32(usize),
 }
 
 impl BfasmOps {
@@ -288,18 +306,16 @@ impl BfasmOps {
             BfasmOps::GreaterThan(index) => bfasm.greater_than(*index),
             BfasmOps::LessThan(index) => bfasm.less_than(*index),
             BfasmOps::Equals(index) => bfasm.equals(*index),
+            BfasmOps::CharToU32(index) => bfasm.char_to_u32(*index),
         }
     }
 
-
     pub(crate) fn exec(code: &[BfasmOps], bfasm: &mut Bfasm) -> Result<(), (usize, BfasmError)> {
-
         for (index, oper) in code.iter().enumerate() {
             oper.exec_instruct(bfasm).map_err(|err| (index, err))?;
         }
 
         Ok(())
-
     }
 }
 
@@ -479,8 +495,6 @@ impl Bfasm {
     // }
 
     pub fn move_to(&mut self, expected_index: usize) {
-        // dbg!(&self);
-
         let str = self.traverse(self.index, expected_index);
 
         self.output.push_str(&str);
@@ -500,7 +514,7 @@ impl Bfasm {
                         Type::FString(_) | Type::IString(_) | Type::Array(_) => ">>[>>]>>",
                     };
 
-                    output.push_str(str); // dbg!(str, index).0);
+                    output.push_str(str);
 
                     index += 1;
                 }
@@ -511,7 +525,7 @@ impl Bfasm {
                         Type::FString(_) | Type::IString(_) | Type::Array(_) => "<<<<[<<]",
                     };
 
-                    output.push_str(str); //dbg!(str, index).0);
+                    output.push_str(str);
 
                     index -= 1;
                 }
@@ -579,7 +593,6 @@ impl Bfasm {
                 let expected = (0..len).map(|_| EC).collect::<Vec<Type>>();
 
                 if slice == expected {
-
                     str.iter().rev().for_each(|char| {
                         write!(self.output, ">>{}", "+".repeat(*char as usize)).unwrap()
                     });
@@ -633,6 +646,21 @@ impl Bfasm {
         self.index += 1;
 
         Ok(())
+    }
+
+    // Doesn't actually do anything in BF just for BFASM use
+    pub fn char_to_u32(&mut self, index: usize) -> Result<(), BfasmError> {
+        let slice = self.get(index);
+
+        if let cell @ Type::Char(_) = slice {
+            let Type::Char(x) = *cell else { unreachable!() };
+
+            *cell = Type::U32(x as u32);
+
+            Ok(())
+        } else {
+            Err(TypeMismatch(vec![EmptyType::Char], vec![slice.clone()]))
+        }
     }
 
     // Todo Test
@@ -695,7 +723,10 @@ impl Bfasm {
 
                 self.index += len - 1;
             }
-            Type::EmptyCell | Type::IString(_) | Type::Array(_) => {
+            Type::EmptyCell => {
+                panic!()
+            }
+            Type::IString(_) | Type::Array(_) => {
                 unimplemented!() //     Todo?
             }
         };
@@ -877,7 +908,20 @@ impl Bfasm {
         let found = self.get_slice(index, 3);
 
         if let [Type::IString(val) | Type::FString(val), Type::U32(str_index), EC] = found {
-            self.array[index + 1] = Type::Char(val[*str_index as usize]);
+            let str_index = *str_index as usize;
+
+            // dbg!(index, str_index);
+
+            let ret = match val.get(str_index) {
+                None => {
+                    self.array[index + 1] = Type::Char(0);
+                    Err(BfasmError::InvalidStringIndex(str_index))
+                }
+                Some(val) => {
+                    self.array[index + 1] = Type::Char(*val);
+                    Ok(())
+                }
+            };
 
             // fill ones
             self.output.push_str("[-<<<[<]+[>]>>]\n");
@@ -887,14 +931,14 @@ impl Bfasm {
             // put the value back abd remove the ones
             self.output
                 .push_str("[-<<<<[<]<+>>[>]>>>]<<<<[<]>[>->]>>\n");
+
+            ret
         } else {
-            return Err(TypeMismatch(
+            Err(TypeMismatch(
                 vec![EmptyType::IString, EmptyType::U32, EEC],
                 Vec::from(found),
-            ));
+            ))
         }
-
-        Ok(())
     }
 
     pub fn print(&mut self, index: usize) -> Result<(), BfasmError> {
@@ -1104,7 +1148,7 @@ impl Bfasm {
     pub fn get_len(&mut self, index: usize) -> Result<(), BfasmError> {
         self.move_to(index + 1);
 
-        let slice = self.get_slice(index, 2);
+        let slice = self.get_slice(index, 3);
 
         if let [val @ (Type::IString(_) | Type::FString(_) | Type::Array(_)), target @ Type::EmptyCell, EC] =
             slice
@@ -1126,7 +1170,7 @@ impl Bfasm {
             Ok(())
         } else {
             Err(TypeMismatch(
-                vec![EmptyType::IString, EEC],
+                vec![EmptyType::IString, EEC, EEC],
                 Vec::from(slice),
             ))
         }
@@ -1155,10 +1199,20 @@ impl Bfasm {
         let slice = self.get_slice(index, 2);
 
         if let [Type::U32(x), Type::U32(y)] = slice {
-            *x -= *y;
+            let (x, y) = (*x, *y);
+
+            // *x = x.checked_sub(*y).ok_or(BfasmError::Underflow)?;
+
             self.array[index + 1] = EC;
             self.output.push_str(">[-<->]<");
-            Ok(())
+
+            if x < y {
+                self.array[index] = Type::U32(0);
+                Err(BfasmError::Underflow)
+            } else {
+                self.array[index] = Type::U32(x - y);
+                Ok(())
+            }
         } else {
             Err(TypeMismatch(
                 vec![EmptyType::U32, EmptyType::U32],
@@ -1168,9 +1222,10 @@ impl Bfasm {
     }
 
     pub fn insert_ec(&mut self, index: usize, number: usize) -> Result<(), BfasmError> {
-
         let mut ending_index = self.array.len();
-        while *self.get(ending_index-1) == EC {ending_index -= 1;}
+        while *self.get(ending_index - 1) == EC {
+            ending_index -= 1;
+        }
 
         self.move_to(ending_index);
 
@@ -1178,7 +1233,6 @@ impl Bfasm {
         let r = ">".repeat(number);
 
         while ending_index != index {
-
             ending_index -= 1;
             self.output.push('<');
 
@@ -1201,7 +1255,6 @@ impl Bfasm {
         (0..number).for_each(|_| self.array.insert(index, EC));
 
         Ok(())
-
     }
 
     pub fn match_char(
@@ -1209,7 +1262,6 @@ impl Bfasm {
         index: usize,
         match_arms: &[(u8, Vec<BfasmOps>)],
     ) -> Result<(), BfasmError> {
-
         self.move_to(index);
 
         // sort the match arms
@@ -1237,29 +1289,44 @@ impl Bfasm {
 
             self.index += 4; // ???
 
+            // string would be cleared if match is succesfull
+            self.array[index] = EC;
+
             // validate the arms
             for (match_index, (cond, code)) in match_arms.iter().enumerate() {
-
-                self.output.push_str(&"+".repeat((*cond - previous_cond) as usize));
+                self.output
+                    .push_str(&"+".repeat((*cond - previous_cond) as usize));
                 self.output.push_str("[-<<[->]>]>>[<<<<[>]>>>>[");
 
                 // after the func, move to the correct location to continue matching
                 let bunf_index = self.index + 1;
 
-                // let Ok(str) = self.test_arm(code, bunf_index) else {
-                //     return Err(BfasmError::InvalidMatchArm(match_index));
-                // };
-                let str = self.test_arm(code, bunf_index)
+                // dbg!(match_index, code, &self.array);
+
+                let str = self
+                    .test_arm(code, bunf_index)
                     .map_err(|err| BfasmError::InvalidMatchArm(match_index, err))?;
 
                 if *cond == val {
+
+                    // dbg!("yay", val);
+
                     let output = self.output.clone(); // Very inefficient TODO memswap?
 
                     // code.iter().for_each(|oper| {
                     //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
                     // });
 
-                    BfasmOps::exec(code, self).expect("Any error should have been caught when validating");
+                    BfasmOps::exec(code, self)
+                        .map_err(|(index, err)| BfasmError::ErrorInMatch(index, Box::new(err)))?;
+                        // .expect("Any error should have been caught when validating");
+
+                    // for op in code {
+                    //     op.exec_instruct(self).unwrap();
+                    //     // dbg!(&self.array);
+                    // }
+
+                    // dbg!("match over");
 
                     self.index = bunf_index;
 
@@ -1285,7 +1352,6 @@ impl Bfasm {
             //     (+++)[-<<[->]>]>>[<<<<[>]>>>>[>func1>,.<]<<<]
             // ]
             // ]>[<]<<<
-
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::Char, EEC, EEC, EEC, EEC, EEC],
@@ -1297,7 +1363,14 @@ impl Bfasm {
     }
 
     // Bfasm Err is boxed to prevent recursion might move boxing to caller if caller wants to handel error
-    fn test_arm(&mut self, code: &[BfasmOps], ret_index: usize) -> Result<String, Option<Box<BfasmError>>> {
+    fn test_arm(
+        &mut self,
+        code: &[BfasmOps],
+        ret_index: usize,
+    ) -> Result<String, Option<Box<BfasmError>>> {
+
+        // dbg!(&self.array, "check start");
+
         let mut bfasm = Bfasm {
             array: self.array.clone(),
             output: "".to_string(),
@@ -1310,7 +1383,17 @@ impl Bfasm {
         //     oper.exec_instruct(&mut bfasm).ok()?;
         // }
 
-        BfasmOps::exec(code, &mut bfasm).unwrap();
+        for op in code {
+            match op.exec_instruct(&mut bfasm) {
+                Ok(_) => {}
+                Err(TypeMismatch(_, _) | BfasmError::InvalidMatchArm(_, _)) => {
+
+                    dbg!(code, "inner err");
+                    return Err(None);
+                },
+                Err(_) => {}
+            }
+        }
 
         bfasm.move_to(ret_index);
 
@@ -1318,11 +1401,14 @@ impl Bfasm {
             self.array.push(Type::EmptyCell);
         }
 
-        assert_eq!(bfasm.array.len(), self.array.len());
+        // todo
+        // assert_eq!(dbg!(&bfasm.array).len(), dbg!(&self.array).len());
 
         if dbg!(EmptyType::from_vec(&self.array)) == dbg!(EmptyType::from_vec(&bfasm.array)) {
+            // dbg!(&self.array, "check end");
             Ok(bfasm.output)
         } else {
+            dbg!(&self.array, &bfasm.array, code, "match fail");
             Err(None)
         }
     }
@@ -1337,9 +1423,10 @@ impl Bfasm {
 
             // after the func, move to the correct location to continue matching
 
-            let str = self
-                .test_arm(code, index)
-                // .ok_or(BfasmError::InvalidMatchArm(0))?;
+            // correct the array
+            self.array[index] = EC;
+
+            let str = self.test_arm(code, index)
                 .map_err(|err| BfasmError::InvalidMatchArm(0, err))?;
 
             if cond {
@@ -1349,16 +1436,16 @@ impl Bfasm {
                 //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
                 // });
 
-                BfasmOps::exec(code, self).expect("Any error should have been caught when validating");
+                BfasmOps::exec(code, self)
+                    .map_err(|(index, err)| BfasmError::ErrorInMatch(index, Box::new(err)))?;
+                    // .expect("Any error should have been caught when validating"); // this panic for a while inside a while
 
                 self.index = index;
 
                 self.output = output;
             }
 
-            self.output.push_str(&format!("[{str}[-]]"));
-
-            self.array[index] = EC;
+            self.output.push_str(&format!("[[-]{str}]"));
 
             Ok(())
         } else {
@@ -1377,19 +1464,25 @@ impl Bfasm {
         if let Type::Bool(bool) = slice {
             let mut cond = *bool;
 
-            let str = self
-                .test_arm(dbg!(code), index)
-                .unwrap();
-                // .ok_or(BfasmError::InvalidMatchArm(0))?;
+            let str = self.test_arm(code, index).map_err(|err| BfasmError::InvalidMatchArm(0, err))?;
 
             let output = self.output.clone();
 
-            while cond {
-                // code.iter().for_each(|oper| {
-                //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
-                // });
+            // dbg!("while start");
 
-                BfasmOps::exec(code, self).expect("Any error should have been caught when validating");
+            while cond {
+                BfasmOps::exec(code, self)
+                    .map_err(|(index, err)| BfasmError::ErrorInMatch(index, Box::new(err)))?;
+                    // .expect("Any error should have been caught when validating");
+
+                // dbg!("while loop");
+
+                // for op in code {
+                //       dbg!(op).exec_instruct(self)?;
+                //     dbg!(&self.array);
+                // }
+
+                // dbg!("loop end");
 
                 self.index = index;
 
@@ -1398,7 +1491,7 @@ impl Bfasm {
                 } else {
                     panic!();
                     // only tests if it will change the target maybe expand to check all of the array?
-                    return Err(BfasmError::InvalidMatchArm(0, None));
+                    // return Err(BfasmError::InvalidMatchArm(0, None));
                 }
             }
 
@@ -1539,7 +1632,7 @@ mod tests {
 
         bunf.set(0, Type::Array(vec![0, 1, 2, 3, 4])).unwrap();
 
-        bunf.set(1, Type::U32(0)).unwrap();
+        bunf.set(1, Type::U32(1)).unwrap();
         bunf.set(2, Type::U32(5)).unwrap();
 
         bunf.array_set_back(0).unwrap();
@@ -1579,7 +1672,6 @@ mod tests {
                 BfasmOps::Set(1, Type::U32(1)),
                 BfasmOps::Clear(0),
                 BfasmOps::Set(0, Type::Bool(false)),
-
             ],
         )
         .unwrap();
@@ -1594,14 +1686,8 @@ mod tests {
         bunf.set(0, Type::Bool(true)).unwrap();
         bunf.set(1, Type::I32(-1)).unwrap();
 
-        bunf.bool_if(
-            0,
-            &vec![
-                BfasmOps::Clear(1),
-                BfasmOps::Set(1, Type::I32(1))
-            ],
-        )
-        .unwrap();
+        bunf.bool_if(0, &vec![BfasmOps::Clear(1), BfasmOps::Set(1, Type::I32(1))])
+            .unwrap();
 
         assert!(bunf.test_run().unwrap())
     }
@@ -1615,27 +1701,9 @@ mod tests {
         bunf.set(1, Type::Char(2)).unwrap();
 
         let mut arms = vec![
-            (
-                1,
-                vec![
-                    BfasmOps::Clear(0),
-                    BfasmOps::Set(0, Type::U32(1)),
-                ],
-            ),
-            (
-                2,
-                vec![
-                    BfasmOps::Clear(0),
-                    BfasmOps::Set(0, Type::U32(3))
-                ],
-            ),
-            (
-                3,
-                vec![
-                    BfasmOps::Clear(0),
-                    BfasmOps::Set(0, Type::U32(9))
-                ],
-            ),
+            (1, vec![BfasmOps::Clear(0), BfasmOps::Set(0, Type::U32(1))]),
+            (2, vec![BfasmOps::Clear(0), BfasmOps::Set(0, Type::U32(3))]),
+            (3, vec![BfasmOps::Clear(0), BfasmOps::Set(0, Type::U32(9))]),
         ];
 
         arms.sort_by_key(|(x, _)| *x);

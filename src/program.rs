@@ -30,7 +30,7 @@ pub(crate) fn main() {
                 array[array_index] -= 1;
             }
             ',' => {
-                array[array_index] = input_char();
+                array[array_index] = input_u32();
             }
             '.' => {
                 print_u32(array[array_index]);
@@ -38,7 +38,9 @@ pub(crate) fn main() {
             '[' => {
                 if array[array_index] == 0 {
                     let mut bracket_count = 1;
+
                     program_index += 1;
+
                     while bracket_count > 0 {
                         match program.chars().nth(program_index).unwrap() {
                             '[' => {
@@ -58,9 +60,9 @@ pub(crate) fn main() {
                 if array[array_index] > 1 {
                     let mut bracket_count = 1;
 
-                    while bracket_count > 0 {
-                        program_index -= 1;
+                    program_index -= 1;
 
+                    while bracket_count > 0 {
                         match program.chars().nth(program_index).unwrap() {
                             '[' => {
                                 bracket_count -= 1;
@@ -70,11 +72,13 @@ pub(crate) fn main() {
                             }
                             _ => {}
                         }
-                        program_index += 1;
+                        program_index -= 1;
                     }
                 }
             }
             _ => {}
         }
+
+        program_index += 1;
     }
 }
