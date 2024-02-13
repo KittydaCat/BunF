@@ -205,7 +205,7 @@ pub enum BfasmError {
     // InvalidIndex(usize),
     InvalidStringIndex(usize),
     InvalidMatchArm(usize, Option<Box<BfasmError>>),
-    ErrorInMatch(usize, Box<BfasmError>),
+    ErrorsInMatch(Vec<BfasmError>),
     Underflow,
 }
 
@@ -231,8 +231,8 @@ impl Display for BfasmError {
             BfasmError::Underflow => {
                 write!(f, "Underflow")
             }
-            BfasmError::ErrorInMatch(index, err) => {
-                write!(f, "Error {err} inside block at index: {index}")
+            BfasmError::ErrorsInMatch(err) => {
+                write!(f, "Error(s) inside block with the first as {}", err[0])
             }
         }
     }
@@ -310,17 +310,34 @@ impl BfasmOps {
         }
     }
 
-    pub(crate) fn exec(code: &[BfasmOps], bfasm: &mut Bfasm) -> Result<(), (usize, BfasmError)> {
+    pub fn exec(code: &[BfasmOps], bfasm: &mut Bfasm) -> Result<(), (usize, BfasmError)> {
         for (index, oper) in code.iter().enumerate() {
             oper.exec_instruct(bfasm).map_err(|err| (index, err))?;
         }
 
         Ok(())
     }
+
+    pub fn full_exec(code: &[BfasmOps], bfasm: &mut Bfasm) -> Result<(), Vec<BfasmError>> {
+
+        let errs: Vec<BfasmError> = code.iter().filter_map(|oper| {
+            match oper.exec_instruct(bfasm) {
+                Ok(()) => {None}
+                Err(x) => {Some(x)}
+            }
+        }).collect();
+
+        if errs.is_empty() {
+            Ok(())
+        } else {
+            Err(errs)
+        }
+    }
 }
 
 // TODO make a doc comment
 // if the pointer is at a type it will be at the first cell of it
+// if a execution errs it should err as late as possible
 #[derive(Debug, Clone)]
 pub struct Bfasm {
     pub array: Vec<Type>,
@@ -700,14 +717,17 @@ impl Bfasm {
     }
 
     pub fn clear(&mut self, index: usize) {
-        self.move_to(index);
 
         match self.get(index) {
-            val @ (Type::U32(_) | Type::Bool(_) | Type::Char(_)) => {
-                *val = Type::EmptyCell;
+            Type::U32(_) | Type::Bool(_) | Type::Char(_) => {
+                self.move_to(index);
+
+                self.array[index] = Type::EmptyCell;
                 self.output.push_str("[-]\n");
             }
             Type::I32(_) => {
+                self.move_to(index);
+
                 self.output.push_str("[-]>[-]\n");
                 self.array[index] = Type::EmptyCell;
                 self.array.insert(index, Type::EmptyCell);
@@ -715,7 +735,11 @@ impl Bfasm {
                 self.index += 1;
             }
             Type::FString(val) => {
+
                 let len = val.len() * 2 + 4;
+
+                self.move_to(index);
+
                 self.output.push_str(">>[[-]>>]>[-]\n");
                 self.array[index] = Type::EmptyCell;
 
@@ -727,7 +751,22 @@ impl Bfasm {
                 panic!()
             }
             Type::IString(_) | Type::Array(_) => {
-                unimplemented!() //     Todo?
+
+                self.move_to(index+1);
+
+                let len = self.array.len();
+                let rest = &self.array[index+1..len];
+
+                if rest.iter().all(|x| *x == Type::EmptyCell) {
+
+                    self.array[index] = Type::EmptyCell;
+                    self.output.push_str("<[-]<<<[[-]<<]");
+
+                    self.index = index;
+
+                } else {
+                    panic!()
+                }
             }
         };
     }
@@ -1292,6 +1331,8 @@ impl Bfasm {
             // string would be cleared if match is succesfull
             self.array[index] = EC;
 
+            let mut errs = Ok(());
+
             // validate the arms
             for (match_index, (cond, code)) in match_arms.iter().enumerate() {
                 self.output
@@ -1317,8 +1358,8 @@ impl Bfasm {
                     //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
                     // });
 
-                    BfasmOps::exec(code, self)
-                        .map_err(|(index, err)| BfasmError::ErrorInMatch(index, Box::new(err)))?;
+                    errs = BfasmOps::full_exec(code, self);
+
                         // .expect("Any error should have been caught when validating");
 
                     // for op in code {
@@ -1352,14 +1393,19 @@ impl Bfasm {
             //     (+++)[-<<[->]>]>>[<<<<[>]>>>>[>func1>,.<]<<<]
             // ]
             // ]>[<]<<<
+
+            match errs{
+                Ok(()) => {Ok(())}
+                Err(errs) => {Err(BfasmError::ErrorsInMatch(errs))}
+            }
+
         } else {
-            return Err(TypeMismatch(
+            Err(TypeMismatch(
                 vec![EmptyType::Char, EEC, EEC, EEC, EEC, EEC],
                 Vec::from(slice),
-            ));
+            ))
         }
 
-        Ok(())
     }
 
     // Bfasm Err is boxed to prevent recursion might move boxing to caller if caller wants to handel error
@@ -1429,6 +1475,8 @@ impl Bfasm {
             let str = self.test_arm(code, index)
                 .map_err(|err| BfasmError::InvalidMatchArm(0, err))?;
 
+            let mut errs = Ok(());
+
             if cond {
                 let output = self.output.clone();
 
@@ -1436,8 +1484,7 @@ impl Bfasm {
                 //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
                 // });
 
-                BfasmOps::exec(code, self)
-                    .map_err(|(index, err)| BfasmError::ErrorInMatch(index, Box::new(err)))?;
+                errs = BfasmOps::full_exec(code, self);
                     // .expect("Any error should have been caught when validating"); // this panic for a while inside a while
 
                 self.index = index;
@@ -1447,7 +1494,11 @@ impl Bfasm {
 
             self.output.push_str(&format!("[[-]{str}]"));
 
-            Ok(())
+            match errs{
+                Ok(()) => {Ok(())}
+                Err(errs) => {Err(BfasmError::ErrorsInMatch(errs))}
+            }
+
         } else {
             Err(TypeMismatch(
                 vec![EmptyType::Bool, EEC],
@@ -1470,9 +1521,10 @@ impl Bfasm {
 
             // dbg!("while start");
 
+            let mut errs = Ok(());
+
             while cond {
-                BfasmOps::exec(code, self)
-                    .map_err(|(index, err)| BfasmError::ErrorInMatch(index, Box::new(err)))?;
+                errs = BfasmOps::full_exec(code, self);
                     // .expect("Any error should have been caught when validating");
 
                 // dbg!("while loop");
@@ -1485,6 +1537,10 @@ impl Bfasm {
                 // dbg!("loop end");
 
                 self.index = index;
+
+                if errs.is_err(){
+                    break
+                }
 
                 if let Type::Bool(bool) = self.get(index) {
                     cond = *bool;
@@ -1499,7 +1555,10 @@ impl Bfasm {
             write!(self.output, "[{str}]").unwrap();
             self.array[index] = EC;
 
-            Ok(())
+            match errs{
+                Ok(()) => {Ok(())}
+                Err(errs) => {Err(BfasmError::ErrorsInMatch(errs))}
+            }
         } else {
             Err(TypeMismatch(
                 vec![EmptyType::Bool, EEC],
