@@ -2,7 +2,7 @@
 mod bfasm;
 mod program;
 
-use crate::bfasm::{Bfasm, BfasmOps, EmptyType, Type};
+use crate::bfasm::{Bfasm, BfasmError, BfasmOps, EmptyType, Type};
 
 // #[derive(Debug)]
 // struct Variable (
@@ -647,6 +647,9 @@ fn find_next_balanced(tokens: &[Token], mut index: usize) -> usize {
 }
 
 fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
+
+    dbg!(tokens);
+
     let mut index = 0;
 
     let Some(Token::Name(ref str)) = tokens.first() else {
@@ -667,9 +670,13 @@ fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
             )))
         }
         Some(Token::OpenParens) => {
-            while *tokens.get(index).unwrap() != Token::CloseParens {
-                index += 1;
-            }
+
+            // while *tokens.get(index).unwrap() != Token::CloseParens {
+            //     index += 1;
+            // }
+
+            index = dbg!(find_next_balanced(tokens, 1));
+
             Value::Func(Box::from(Function::parens_call(
                 str,
                 tokens_to_value(&tokens[2..index]),
@@ -1318,7 +1325,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
 
                     vec![BfasmOps::Input(
                         target_index,
-                        Type::IString(Vec::from("+".as_bytes())),
+                        Type::IString(Vec::from(",+.".as_bytes())),
                     )]
                 }
                 Function::NewArray => {
@@ -1387,7 +1394,7 @@ fn search_bf<'a>(
     })
 }
 
-fn bunf(str: &str) -> Vec<BfasmOps> {
+fn bunf(str: &str) -> Result<Bfasm, Vec<BfasmError>> {
     let tokens = tokenize(str).unwrap();
 
     let statements = tokens_to_statements(&tokens).unwrap();
@@ -1396,7 +1403,11 @@ fn bunf(str: &str) -> Vec<BfasmOps> {
 
     let code = annostatements_to_bfasm(&mut Vec::new(), &anno);
 
-    code
+    let mut bfasm = Bfasm::new();
+
+    BfasmOps::full_exec(&code, &mut bfasm)?;
+
+    Ok(bfasm)
 }
 #[cfg(test)]
 mod tests {
@@ -1445,6 +1456,13 @@ mod tests {
     }
 
     #[test]
+    fn test() {
+        assert!(bunf("let x = new_array();\
+        x.push(input_u32());\
+        print_u32(x[0]);").unwrap().test_run().unwrap())
+    }
+
+    #[test]
     fn norm_program() {
         main()
     }
@@ -1463,13 +1481,7 @@ mod tests {
             x -= 1;
         }";
 
-        let x = bunf(code);
-
-        let mut bfasm = Bfasm::new();
-
-        x.iter().for_each(|x| x.exec_instruct(&mut bfasm).unwrap());
-
-        assert!(bfasm.test_run().unwrap())
+        assert!(bunf(code).unwrap().test_run().unwrap())
     }
 
     #[test]
