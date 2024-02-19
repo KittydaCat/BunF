@@ -648,7 +648,7 @@ fn find_next_balanced(tokens: &[Token], mut index: usize) -> usize {
 
 fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
 
-    dbg!(tokens);
+    // dbg!(tokens);
 
     let mut index = 0;
 
@@ -675,7 +675,7 @@ fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
             //     index += 1;
             // }
 
-            index = dbg!(find_next_balanced(tokens, 1));
+            index = find_next_balanced(tokens, 1);
 
             Value::Func(Box::from(Function::parens_call(
                 str,
@@ -684,9 +684,8 @@ fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
         }
         Some(Token::Dot) => {
             if let [Token::Name(ref func_name), Token::OpenParens] = &tokens[2..4] {
-                while *tokens.get(index).unwrap() != Token::CloseParens {
-                    index += 1;
-                }
+
+                index = find_next_balanced(tokens, 3);
 
                 // Value::Func(Box::from(Function::dot_call(
                 //     func_name,
@@ -1273,7 +1272,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                         }
                         Function::LessThan(_, _) => {
                             // code.push(Box::new(move |x| Bfasm::less_than(x, target_index)));
-                            code.push(BfasmOps::GreaterThan(target_index));
+                            code.push(BfasmOps::LessThan(target_index));
                         }
                         Function::Equal(_, _) => {
                             // code.push(Box::new(move |x| Bfasm::equals(x, target_index)));
@@ -1401,7 +1400,7 @@ fn bunf(str: &str) -> Result<Bfasm, Vec<BfasmError>> {
 
     let anno = annotate_statements(&statements, &mut Vec::new());
 
-    let code = annostatements_to_bfasm(&mut Vec::new(), &anno);
+    let code = dbg!(annostatements_to_bfasm(&mut Vec::new(), &anno));
 
     let mut bfasm = Bfasm::new();
 
@@ -1442,11 +1441,10 @@ mod tests {
         // code.iter().for_each(|oper| oper(&mut bfasm).unwrap());
         // BfasmOps::exec(&code, &mut bfasm).unwrap();
         for op in &code {
-            dbg!(op).exec_instruct(&mut bfasm).unwrap();
-            dbg!(&bfasm.array);
+            op.exec_instruct(&mut bfasm).unwrap();
         }
 
-        dbg!(&bfasm);
+        dbg!(bfasm.output.len());
 
         assert!(bfasm.test_run().unwrap())
 
@@ -1457,9 +1455,35 @@ mod tests {
 
     #[test]
     fn test() {
-        assert!(bunf("let x = new_array();\
+
+        let code = "let x = new_array();\
         x.push(input_u32());\
-        print_u32(x[0]);").unwrap().test_run().unwrap())
+        print_u32(x[0]);";
+
+        let bfasm = bunf(code).unwrap();
+
+        dbg!(&bfasm.expected_input);
+
+        assert!(bfasm.test_run().unwrap())
+    }
+
+    #[test]
+    fn test2() {
+        let code = "
+            let program = input_str();
+            let mut program_index = 0;
+            let mut array = new_array();
+            array.push(0);
+            let mut array_index = 0;
+            array[array_index] = input_u32();
+            array[array_index] += 1;
+            print_u32(array[array_index]);";
+
+        let bfasm = bunf(code).unwrap();
+
+        dbg!(&bfasm.expected_input);
+
+        assert!(bfasm.test_run().unwrap())
     }
 
     #[test]

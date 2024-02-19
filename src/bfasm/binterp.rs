@@ -4,6 +4,7 @@ pub enum BFError {
     NegativeArrayPointer,
     NonASCIIChar,
     InvalidInstructionIndex,
+    NegativeCellValue,
     InputFailed,
     OutputFailed,
 }
@@ -133,7 +134,13 @@ pub fn exec_bf_instruction(
             array[*array_index] += 1;
         }
         '-' => {
-            array[*array_index] -= 1;
+            if array[*array_index] > 0 {
+                array[*array_index] -= 1;
+            } else {
+                let x = dbg!(*instruct_index);
+                dbg!(&instructions[x..x+10]);
+                return Err(BFError::NegativeCellValue)
+            }
         }
 
         // pointer left and right
