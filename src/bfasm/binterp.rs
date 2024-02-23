@@ -184,6 +184,7 @@ pub fn exec_bf_instruction(
                 return Err(BFError::NonASCIIChar);
             }
         }
+        'd' => {dbg!(array, array_index);}
         _ => {}
     }
 

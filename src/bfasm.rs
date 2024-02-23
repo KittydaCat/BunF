@@ -1166,7 +1166,7 @@ impl Bfasm {
             *val = array[array.len() - *val as usize - 1];
 
             // fill ones
-            self.output.push_str("[-<<<[<]+[>]>>]\n");
+            self.output.push_str("d[-<<<[<]+[>]>>]\n");
             // grab the indexed value and copy it
             self.output
                 .push_str("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
@@ -1202,7 +1202,7 @@ impl Bfasm {
             self.index = index + 1;
 
             // fill ones and clear value
-            self.output.push_str("[-<<<[<]+[>]>>]<<<[<]<[-]+>>[>]>>>\n");
+            self.output.push_str("d[-<<<[<]+[>]>>]<<<[<]<[-]+>>[>]>>>\n");
 
             // set the value
             self.output.push_str("[-<<<<[<]<+>>[>]>>>]\n");
@@ -1729,24 +1729,25 @@ mod tests {
 
         //   if the end of the string is reached break
     }
-    //
-    // #[test]
-    // fn array_test2() {
-    //
-    //     let mut bfasm = Bfasm::new();
-    //
-    //     bfasm.set(0, Type::from(vec![0, 1, 2, 3, 4, 5])).unwrap();
-    //
-    //     bfasm.set(1, Type::U32(1)).unwrap();
-    //
-    //     bfasm.array_index_back(0).unwrap();
-    //
-    //     bfasm.set(2, Type::U32(5)).unwrap();
-    //
-    //     bfasm.array_set_back(0).unwrap();
-    //
-    //     assert!(bfasm.test_run().unwrap());
-    // }
+
+    #[test]
+    fn array_test2() {
+
+        let mut bfasm = Bfasm::new();
+
+        bfasm.set(0, Type::IString(vec![44,43,46])).unwrap();
+
+        bfasm.set(3, Type::U32(2)).unwrap();
+
+        bfasm.set(6, Type::Array(vec![98])).unwrap();
+        bfasm.set(7, Type::U32(0)).unwrap();
+
+        bfasm.move_to(17);
+
+        bfasm.array_index_back(6).unwrap();
+
+        assert!(bfasm.test_run().unwrap())
+    }
 
     #[test]
     fn insert_test() {

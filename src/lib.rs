@@ -2,6 +2,7 @@
 mod bfasm;
 mod program;
 
+use std::str::Chars;
 use crate::bfasm::{Bfasm, BfasmError, BfasmOps, EmptyType, Type};
 
 // #[derive(Debug)]
@@ -353,7 +354,7 @@ fn tokenize(code: &str) -> Option<Vec<Token>> {
 
 // returns an alphanumeric string and the non-alphanumeric or None if the iter was ended before a
 // non-alphanumeric char was found
-fn next_word(iter: &mut std::iter::Enumerate<std::str::Chars>) -> Option<(String, (usize, char))> {
+fn next_word(iter: &mut std::iter::Enumerate<Chars>) -> Option<(String, (usize, char))> {
     let mut str = String::new();
 
     for (index, char) in iter.by_ref() {
@@ -911,6 +912,7 @@ fn increase_req_space(scope: &mut [Vec<Variable>], var_name: &str, min_val: usiz
 fn annostatements_to_bfasm(
     bf_array: &mut Vec<(Option<String>, EmptyType)>,
     anno_states: &AnnotatedBlock,
+    input: &mut Chars,
 ) -> Vec<BfasmOps> {
     let mut bfasm_ops: Vec<_> = anno_states
         .0
@@ -922,11 +924,11 @@ fn annostatements_to_bfasm(
 
                     let target_val = bf_array.len();
 
-                    let mut bf_code = eval_value(val, bf_array);
+                    let mut bf_code = eval_value(val, bf_array, input);
 
                     assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
 
-                    let if_code = annostatements_to_bfasm(bf_array, code);
+                    let if_code = annostatements_to_bfasm(bf_array, code, input);
 
                     // bf_code.push(Box::new(move |bunf| bunf.bool_while(target_val, &if_code)));
                     bf_code.push(BfasmOps::BoolIf(target_val, if_code));
@@ -938,10 +940,10 @@ fn annostatements_to_bfasm(
 
                     let target_val = bf_array.len();
 
-                    let mut val_code = eval_value(val, bf_array);
+                    let mut val_code = eval_value(val, bf_array, input);
                     let mut bf_code = val_code.clone();
 
-                    let mut while_code = annostatements_to_bfasm(bf_array, code);
+                    let mut while_code = annostatements_to_bfasm(bf_array, code, input);
 
                     assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Bool));
 
@@ -964,7 +966,7 @@ fn annostatements_to_bfasm(
 
                     let target_val = bf_array.len();
 
-                    let mut code = eval_value(val, bf_array);
+                    let mut code = eval_value(val, bf_array, input);
 
                     assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::Char));
 
@@ -976,7 +978,7 @@ fn annostatements_to_bfasm(
                         .map(|(bf_type, anno_states)| {
                             let Type::Char(char) = bf_type else { panic!() };
 
-                            (*char, annostatements_to_bfasm(bf_array, anno_states))
+                            (*char, annostatements_to_bfasm(bf_array, anno_states, input))
                         })
                         .collect();
 
@@ -995,7 +997,7 @@ fn annostatements_to_bfasm(
                             {
                                 let var_type = var_type.clone();
 
-                                let mut code = eval_value(val, bf_array);
+                                let mut code = eval_value(val, bf_array, input);
 
                                 assert_eq!(bf_array.pop().unwrap(), (None, var_type));
 
@@ -1018,7 +1020,7 @@ fn annostatements_to_bfasm(
                                     .find(|(str, _, _)| str == var_name)
                                     .unwrap();
 
-                                let code = eval_value(val, bf_array);
+                                let code = eval_value(val, bf_array, input);
 
                                 let len = bf_array.len() - 1;
 
@@ -1045,9 +1047,9 @@ fn annostatements_to_bfasm(
 
                             let index_index = bf_array.len();
 
-                            let mut code = eval_value(array_index, bf_array);
+                            let mut code = eval_value(array_index, bf_array, input);
 
-                            code.append(&mut eval_value(array_val, bf_array));
+                            code.append(&mut eval_value(array_val, bf_array, input));
 
                             assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
                             assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
@@ -1071,7 +1073,7 @@ fn annostatements_to_bfasm(
                                 panic!()
                             };
 
-                            let mut code = eval_value(val, bf_array);
+                            let mut code = eval_value(val, bf_array, input);
 
                             assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
 
@@ -1090,7 +1092,7 @@ fn annostatements_to_bfasm(
                             code
                         } // need to add push back to bfasm
                         Function::PrintU32(val) => {
-                            let mut code = eval_value(val, bf_array);
+                            let mut code = eval_value(val, bf_array, input);
 
                             assert_eq!(bf_array.pop().unwrap(), (None, EmptyType::U32));
 
@@ -1163,14 +1165,14 @@ fn annostatements_to_bfasm(
     bfasm_ops
 }
 
-fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) -> Vec<BfasmOps> {
+fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>, input: &mut Chars) -> Vec<BfasmOps> {
     match value {
         Value::Func(func) => {
             match &**func {
                 func @ (Function::IndexStr(var_name, val) | Function::Index(var_name, val)) => {
                     assert_eq!(val.bftype(), EmptyType::U32);
 
-                    let mut code = eval_value(val, bf_array);
+                    let mut code = eval_value(val, bf_array, input);
 
                     let (
                         var_index,
@@ -1219,9 +1221,9 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                     assert_eq!(val1.bftype(), EmptyType::U32);
                     assert_eq!(val2.bftype(), EmptyType::U32);
 
-                    let mut code = eval_value(val1, bf_array);
+                    let mut code = eval_value(val1, bf_array, input);
 
-                    code.append(&mut eval_value(val2, bf_array));
+                    code.append(&mut eval_value(val2, bf_array, input));
 
                     let target_index = bf_array.len() - 2;
 
@@ -1250,9 +1252,9 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                     assert_eq!(val1.bftype(), EmptyType::U32);
                     assert_eq!(val2.bftype(), EmptyType::U32);
 
-                    let mut code = eval_value(val1, bf_array);
+                    let mut code = eval_value(val1, bf_array, input);
                     bf_array.push((None, EmptyType::EmptyCell));
-                    code.append(&mut eval_value(val2, bf_array));
+                    code.append(&mut eval_value(val2, bf_array, input));
 
                     let target_index = bf_array.len() - 3;
 
@@ -1314,17 +1316,18 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                 Function::InputStr => {
                     let target_index = bf_array.len();
 
-                    // Todo add non default values
-
                     bf_array.push((None, EmptyType::IString));
 
                     // vec![Box::new(move |x| {
                     //     x.input(target_index, Type::from(String::new()))
                     // })]
 
+                    let mut str = dbg!(input.take_while(|char| *char != '\0').collect::<String>());
+                    assert!(str.len() > 0);
+
                     vec![BfasmOps::Input(
                         target_index,
-                        Type::IString(Vec::from(",+.".as_bytes())),
+                        Type::IString(str.into_bytes()),
                     )]
                 }
                 Function::NewArray => {
@@ -1340,12 +1343,11 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>) ->
                 }
                 Function::InputU32 => {
                     let target_index = bf_array.len();
-                    // todo? Add options for defaults
                     bf_array.push((None, EmptyType::U32));
 
                     // vec![Box::new(move |x| x.input(target_index, Type::from('a')))]
                     vec![
-                        BfasmOps::Input(target_index, Type::from('a')),
+                        BfasmOps::Input(target_index, Type::from(input.next().unwrap())),
                         BfasmOps::CharToU32(target_index),
                     ]
                 }
@@ -1393,14 +1395,14 @@ fn search_bf<'a>(
     })
 }
 
-fn bunf(str: &str) -> Result<Bfasm, Vec<BfasmError>> {
-    let tokens = tokenize(str).unwrap();
+fn bunf(program: &str, input: &mut Chars) -> Result<Bfasm, Vec<BfasmError>> {
+    let tokens = tokenize(program).unwrap();
 
     let statements = tokens_to_statements(&tokens).unwrap();
 
     let anno = annotate_statements(&statements, &mut Vec::new());
 
-    let code = dbg!(annostatements_to_bfasm(&mut Vec::new(), &anno));
+    let code = dbg!(annostatements_to_bfasm(&mut Vec::new(), &anno, input));
 
     let mut bfasm = Bfasm::new();
 
@@ -1430,16 +1432,18 @@ mod tests {
 
         let mut vec2 = Vec::new();
 
-        let code = dbg!(annostatements_to_bfasm(&mut vec2, &anno));
+        let mut input = ",+.\0a".chars();
+
+        let mut code = dbg!(annostatements_to_bfasm(&mut vec2, &anno, &mut input));
+        code.pop();
+        code.pop();
+        code.pop();
+        code.pop();
 
         assert!(vec2.is_empty());
 
-        // let bfasm = code.iter().fold(Bfasm::new(), |bfasm, oper| {oper(&mut bfasm).unwrap(); bfasm});
-
         let mut bfasm = Bfasm::new();
 
-        // code.iter().for_each(|oper| oper(&mut bfasm).unwrap());
-        // BfasmOps::exec(&code, &mut bfasm).unwrap();
         for op in &code {
             op.exec_instruct(&mut bfasm).unwrap();
         }
@@ -1448,9 +1452,6 @@ mod tests {
 
         assert!(bfasm.test_run().unwrap())
 
-        // println!("{:?}\n{:?}", tokens, statements);
-        //
-        // Statement::print(&statements)
     }
 
     #[test]
@@ -1460,7 +1461,7 @@ mod tests {
         x.push(input_u32());\
         print_u32(x[0]);";
 
-        let bfasm = bunf(code).unwrap();
+        let bfasm = bunf(code, &mut "a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 
@@ -1479,7 +1480,7 @@ mod tests {
             array[array_index] += 1;
             print_u32(array[array_index]);";
 
-        let bfasm = bunf(code).unwrap();
+        let bfasm = bunf(code, &mut ",+.\0a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 
@@ -1505,7 +1506,7 @@ mod tests {
             x -= 1;
         }";
 
-        assert!(bunf(code).unwrap().test_run().unwrap())
+        assert!(bunf(code, &mut "".chars()).unwrap().test_run().unwrap())
     }
 
     #[test]
