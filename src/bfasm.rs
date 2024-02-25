@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::Deref;
-use std::usize;
+use std::{mem, usize};
 
 use crate::bfasm::binterp::{run_bf, BFError};
 mod binterp;
@@ -1404,7 +1404,7 @@ impl Bfasm {
 
                     // dbg!("yay", val);
 
-                    let output = self.output.clone(); // Very inefficient TODO memswap?
+                    let output = mem::take(&mut self.output);
 
                     // code.iter().for_each(|oper| {
                     //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
@@ -1533,7 +1533,7 @@ impl Bfasm {
             let mut errs = Ok(());
 
             if cond {
-                let output = self.output.clone();
+                let output = mem::take(&mut self.output);
 
                 // code.iter().for_each(|oper| {
                 //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
@@ -1575,7 +1575,7 @@ impl Bfasm {
 
             let str = self.test_arm(code, index).map_err(|err| BfasmError::InvalidMatchArm(0, err))?;
 
-            let output = self.output.clone();
+            let output = mem::take(&mut self.output);
 
             // dbg!("while start");
 

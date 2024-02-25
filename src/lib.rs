@@ -1322,7 +1322,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>, in
                     //     x.input(target_index, Type::from(String::new()))
                     // })]
 
-                    let mut str = dbg!(input.take_while(|char| *char != '\0').collect::<String>());
+                    let str = dbg!(input.take_while(|char| *char != '\0').collect::<String>());
                     assert!(str.len() > 0);
 
                     vec![BfasmOps::Input(
@@ -1452,6 +1452,17 @@ mod tests {
 
         assert!(bfasm.test_run().unwrap())
 
+    }
+
+    #[test]
+    fn test3() {
+        let code = "";
+
+        let bfasm = bunf(code, &mut "a".chars()).unwrap();
+
+        dbg!(&bfasm.expected_input);
+
+        assert!(bfasm.test_run().unwrap())
     }
 
     #[test]
