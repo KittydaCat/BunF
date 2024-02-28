@@ -24,6 +24,7 @@ pub enum BFError {
 //     }
 // }
 
+#[derive(Debug, Clone)]
 pub struct BFInterpreter {
     pub array: Vec<u32>,
     pub array_pointer: usize,
@@ -221,44 +222,4 @@ fn equalize_brackets(string: &str, mut index: usize, direction: isize) -> Result
         };
     }
     Ok(index)
-}
-
-fn main() {
-    //
-    // use std::fs::File;
-    // use std::io::prelude::*;
-    //
-    // fn input() -> Result<char, BFError>{
-    //
-    //     let mut line = String::new();
-    //
-    //     let _ = std::io::stdout().flush();
-    //
-    //     match std::io::stdin().read_line(&mut line){
-    //
-    //         Ok(_) => {Ok(line.chars().next().expect("Line should not be empty"))}
-    //
-    //         Err(_) => {return Err(BFError::InputFailed);}
-    //     }
-    //
-    // }
-    //
-    // fn print(str: char) -> Result<(), BFError>{
-    //     println!("{}",str);
-    //     Ok(())
-    // }
-    //
-    // let mut file = File::open("foo.txt").expect("File open failed :(");
-    // let mut contents = String::new();
-    // file.read_to_string(&mut contents).expect("File read failed :(");
-    //
-    // let mut array = vec![];
-    //
-    // match run_bf(&mut array, &mut 0, &contents,
-    //                  &(input as fn() -> Result<char, BFError>),
-    //                  &(print as fn(char) -> Result<(), BFError>), &mut 0) {
-    //     Ok(_) => {}
-    //     Err(x) => {println!("Error: {:?}", x);}
-    // };
-    // println!("\n{:?}", &array);
 }

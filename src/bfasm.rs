@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::Deref;
-use std::{mem, usize};
+use std::{fmt, mem, usize};
 
-use crate::bfasm::binterp::{run_bf, BFError};
+use crate::bfasm::binterp::{run_bf, BFError, BFInterpreter};
 mod binterp;
 
 use Type::EmptyCell as EC;
@@ -335,13 +335,48 @@ impl BfasmOps {
     }
 }
 
+#[derive(Debug, Clone)]
+enum BfasmWriter {
+    String(String),
+    BFInterp(BFInterpreter)
+}
+
+impl BfasmWriter {
+    fn push_str(&mut self, s: &str) {
+
+        match self {
+            BfasmWriter::String(str) => {
+                str.push_str(s)
+            }
+            BfasmWriter::BFInterp(binterp) => {
+                binterp.program.push_str(s)
+            }
+        }
+
+    }
+}
+
+impl Write for BfasmWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        match self {
+            BfasmWriter::String(str) => {
+                str.push_str(s)
+            }
+            BfasmWriter::BFInterp(binterp) => {
+                binterp.program.push_str(s)
+            }
+        };
+        Ok(())
+    }
+}
+
 // TODO make a doc comment
 // if the pointer is at a type it will be at the first cell of it
 // if a execution errs it should err as late as possible
 #[derive(Debug, Clone)]
 pub struct Bfasm {
     pub array: Vec<Type>,
-    pub output: String,
+    pub output: BfasmWriter,
     pub index: usize,
     pub expected_input: String,
     pub expected_output: String,
@@ -370,7 +405,7 @@ impl Bfasm {
     pub fn new() -> Self {
         Self {
             array: vec![],
-            output: String::new(),
+            output: BfasmWriter::String(String::new()),
             index: 0,
             expected_input: String::new(),
             expected_output: String::new(),
@@ -421,7 +456,7 @@ impl Bfasm {
         // automagically moves the cursor to 0 until I can implement sizes for Types
         self.move_to(0);
 
-        println!("{}", &self.output);
+        println!("{:?}", &self.output);
 
         let (mut found, index) = self.run_io(input, output)?;
 
@@ -1378,7 +1413,7 @@ impl Bfasm {
 
             let mut previous_cond = 0;
 
-            self.output.push_str(">>>>+<<"); // might be to many >s
+            self.output.push_str(">>>>+<<");
 
             self.index += 4; // ???
 
