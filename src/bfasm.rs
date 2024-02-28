@@ -338,34 +338,30 @@ impl BfasmOps {
 #[derive(Debug, Clone)]
 enum BfasmWriter {
     String(String),
-    BFInterp(BFInterpreter)
+    BFInterp(BFInterpreter),
+    None,
 }
 
 impl BfasmWriter {
     fn push_str(&mut self, s: &str) {
-
         match self {
-            BfasmWriter::String(str) => {
-                str.push_str(s)
-            }
-            BfasmWriter::BFInterp(binterp) => {
-                binterp.program.push_str(s)
-            }
+            BfasmWriter::String(str) => {str.push_str(s)}
+            BfasmWriter::BFInterp(binterp) => {binterp.program.push_str(s)}
+            BfasmWriter::None => {}
         }
-
+    }
+    fn push(&mut self, s: char) {
+        match self {
+            BfasmWriter::String(str) => {str.push(s)}
+            BfasmWriter::BFInterp(binterp) => {binterp.program.push(s)}
+            BfasmWriter::None => {}
+        }
     }
 }
 
 impl Write for BfasmWriter {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        match self {
-            BfasmWriter::String(str) => {
-                str.push_str(s)
-            }
-            BfasmWriter::BFInterp(binterp) => {
-                binterp.program.push_str(s)
-            }
-        };
+        self.push_str(s);
         Ok(())
     }
 }

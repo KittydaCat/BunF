@@ -1,3 +1,5 @@
+use std::str::Chars;
+
 #[derive(Debug, Clone)]
 pub enum BFError {
     UnbalancedBrackets,
@@ -9,20 +11,6 @@ pub enum BFError {
     OutputFailed,
 }
 
-// impl fmt::Display for BFError{
-//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-//
-//         let error_string = match self{
-//             BFError::UnbalancedBrackets => {"UnbalancedBrackets"}
-//             BFError::NegativeArrayPointer => {"NegativeArrayPointer"}
-//             BFError::NonASCIIChar => {"NonASCIIChar"}
-//             BFError::InvalidInstructionIndex => {"InvalidInstructionIndex"}
-//             BFError::InputFailed => {"InputFailed"}
-//             BFError::OutputFailed => {"OutputFailed"}
-//         };
-//         write!(f, "{}", error_string)
-//     }
-// }
 
 #[derive(Debug, Clone)]
 pub struct BFInterpreter {
@@ -32,15 +20,13 @@ pub struct BFInterpreter {
     pub program: String,
     pub program_index: usize,
 
-    pub input: Box<dyn FnMut() -> Result<char, BFError>>,
-    pub output: Box<dyn FnMut(char) -> Result<(), BFError>>,
+    pub input: Vec<char>,
+    pub output: String,
 }
 
 impl BFInterpreter {
     pub fn new(
         program: String,
-        input: Box<dyn FnMut() -> Result<char, BFError>>,
-        output: Box<dyn FnMut(char) -> Result<(), BFError>>,
     ) -> Self {
         // change to create?
 
@@ -49,8 +35,8 @@ impl BFInterpreter {
             array_pointer: 0,
             program,
             program_index: 0,
-            input,
-            output,
+            input: Vec::new(),
+            output: String::new(),
         }
     }
 
@@ -59,8 +45,8 @@ impl BFInterpreter {
             &mut self.array,
             &mut self.array_pointer,
             &self.program,
-            &mut *self.input,
-            &mut *self.output,
+            &mut self.input,
+            &mut self.output,
             &mut self.program_index,
         )
     }
@@ -71,8 +57,8 @@ impl BFInterpreter {
                 &mut self.array,
                 &mut self.array_pointer,
                 &self.program,
-                &mut *self.input,
-                &mut *self.output,
+                &mut self.input,
+                &mut self.output,
                 &mut self.program_index,
                 instruction,
             )?;
@@ -96,8 +82,8 @@ pub fn run_bf(
     array: &mut Vec<u32>,
     array_index: &mut usize,
     instructions: &str,
-    input: &mut dyn FnMut() -> Result<char, BFError>,
-    output: &mut dyn FnMut(char) -> Result<(), BFError>,
+    input: &mut Vec<char>,
+    output: &mut String,
     instruct_index: &mut usize,
 ) -> Result<(), BFError> {
     while *array_index >= array.len() {
@@ -124,8 +110,8 @@ pub fn exec_bf_instruction(
     array: &mut Vec<u32>,
     array_index: &mut usize,
     instructions: &str,
-    input: &mut dyn FnMut() -> Result<char, BFError>,
-    output: &mut dyn FnMut(char) -> Result<(), BFError>,
+    input: &mut Vec<char>,
+    output: &mut String,
     instruct_index: &mut usize,
     instruction: char,
 ) -> Result<(), BFError> {
@@ -171,7 +157,10 @@ pub fn exec_bf_instruction(
 
         // input (,) and output (.)
         ',' => {
-            let char = input()?;
+            if input.len() > 0 {
+                return Err(BFError::InputFailed);
+            }
+            let char = input.remove(0);
             if char.is_ascii() {
                 array[*array_index] = char as u32
             } else {
@@ -180,7 +169,7 @@ pub fn exec_bf_instruction(
         }
         '.' => {
             if (array[*array_index] as u8).is_ascii() {
-                output(array[*array_index] as u8 as char)?
+                output.push(array[*array_index] as u8 as char)
             } else {
                 return Err(BFError::NonASCIIChar);
             }
