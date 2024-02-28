@@ -1,0 +1,32 @@
+fn main() {
+    let program = input_str();
+
+    let mut program_index = 0;
+
+    let mut array = new_array();
+
+    array.push(0);
+
+    let mut array_index = 0;
+
+    while program_index < program.len() {
+        match program.chars().nth(program_index).unwrap() {
+            '+' => {
+                array[array_index] += 1;
+            }
+            '-' => {
+                array[array_index] -= 1;
+            }
+            ',' => {
+                array[array_index] = input_u32();
+            }
+            '.' => {
+                print_u32(array[array_index]);
+            }
+
+            _ => {}
+        }
+
+        program_index += 1;
+    }
+}

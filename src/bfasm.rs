@@ -559,6 +559,7 @@ impl Bfasm {
 
     pub fn set(&mut self, index: usize, item: Type) -> Result<(), BfasmError> {
 
+        write!(self.output, "Setting at {}\n", index).unwrap();
         // write!(self.output, "Setting {} to {:?}\n", index, item).unwrap();
 
         self.move_to(index);
@@ -669,7 +670,7 @@ impl Bfasm {
     // Doesn't actually do anything in BF just for BFASM use
     pub fn char_to_u32(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Changing char at {} to u32\n", index).unwrap();
+        write!(self.output, "Changing char at {} to u32\n", index).unwrap();
 
         let slice = self.get(index);
 
@@ -687,7 +688,7 @@ impl Bfasm {
     // Todo Test
     pub fn move_type(&mut self, index: usize, target_index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Moving {} to {}\n", index, target_index).unwrap();
+        write!(self.output, "Moving {} to {}\n", index, target_index).unwrap();
 
         self.move_to(index);
 
@@ -725,7 +726,7 @@ impl Bfasm {
 
     pub fn clear(&mut self, index: usize) {
 
-        // write!(self.output, "Clearing {}\n", index).unwrap();
+        write!(self.output, "Clearing {}\n", index).unwrap();
 
         match self.get(index) {
             Type::U32(_) | Type::Bool(_) | Type::Char(_) => {
@@ -782,7 +783,7 @@ impl Bfasm {
 
     pub fn copy_val(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Copying value at {}\n", index).unwrap();
+        write!(self.output, "Copying value at {}\n", index).unwrap();
 
         self.move_to(index);
 
@@ -897,6 +898,7 @@ impl Bfasm {
 
     pub fn input(&mut self, index: usize, input_val: Type) -> Result<(), BfasmError> {
 
+        write!(self.output, "Inputing at {}\n", index).unwrap();
         // write!(self.output, "Input {:?} at {}\n", input_val, index).unwrap();
         self.move_to(index);
 
@@ -955,7 +957,7 @@ impl Bfasm {
     }
 
     pub fn index_str(&mut self, index: usize) -> Result<(), BfasmError> {
-        // write!(self.output, "Indexing at {index}\n").unwrap();
+        write!(self.output, "Indexing at {index}\n").unwrap();
         self.move_to(index + 1);
 
         let found = self.get_slice(index, 3);
@@ -996,7 +998,7 @@ impl Bfasm {
 
     pub fn print(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Printing at {index}\n").unwrap();
+        write!(self.output, "Printing at {index}\n").unwrap();
 
         self.move_to(index);
 
@@ -1028,7 +1030,7 @@ impl Bfasm {
 
     pub fn str_push_front(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Pushing front at {index}\n").unwrap();
+        write!(self.output, "Pushing front at {index}\n").unwrap();
 
         self.move_to(index + 1);
 
@@ -1053,7 +1055,7 @@ impl Bfasm {
 
     pub fn str_push(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Pushing at {index}\n").unwrap();
+        write!(self.output, "Pushing at {index}\n").unwrap();
 
         self.move_to(index - 1);
 
@@ -1078,7 +1080,7 @@ impl Bfasm {
 
     pub fn array_push(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Pushing at {index}\n").unwrap();
+        write!(self.output, "Pushing at {index}\n").unwrap();
 
         self.move_to(index + 1);
 
@@ -1103,7 +1105,7 @@ impl Bfasm {
 
     pub fn array_push_front(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Pushing front at {index}\n").unwrap();
+        write!(self.output, "Pushing front at {index}\n").unwrap();
 
         self.move_to(index - 1);
 
@@ -1128,7 +1130,7 @@ impl Bfasm {
 
     pub fn array_index(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Indexing at {index}\n").unwrap();
+        write!(self.output, "Indexing at {index}\n").unwrap();
 
         self.move_to(index + 1);
 
@@ -1156,7 +1158,7 @@ impl Bfasm {
     // just like the string index
     pub fn array_index_back(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Indexing back at {index}\n").unwrap();
+        write!(self.output, "Indexing back at {index}\n").unwrap();
 
         self.move_to(index + 1);
 
@@ -1186,7 +1188,7 @@ impl Bfasm {
     // just like the string index
     pub fn array_set_back(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Setting back at {index}\n").unwrap();
+        write!(self.output, "Setting back at {index}\n").unwrap();
 
         self.move_to(index + 1);
 
@@ -1222,7 +1224,7 @@ impl Bfasm {
     // Todo Test
     pub fn get_len(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Getting the length at {index}\n").unwrap();
+        write!(self.output, "Getting the length at {index}\n").unwrap();
 
         self.move_to(index + 1);
 
@@ -1256,7 +1258,7 @@ impl Bfasm {
 
     pub fn add_u32(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Adding U32s at {index}\n").unwrap();
+        write!(self.output, "Adding U32s at {index}\n").unwrap();
 
         self.move_to(index);
 
@@ -1276,7 +1278,7 @@ impl Bfasm {
     }
     pub fn unsafe_sub_u32(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Unsafe Subtracting U32s at {index}\n").unwrap();
+        write!(self.output, "Unsafe Subtracting U32s at {index}\n").unwrap();
 
         self.move_to(index);
 
@@ -1307,7 +1309,7 @@ impl Bfasm {
 
     pub fn insert_ec(&mut self, index: usize, number: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Inserting {number} ECs at {index}\n").unwrap();
+        write!(self.output, "Inserting {number} ECs at {index}\n").unwrap();
 
         let mut ending_index = self.array.len();
         while *self.get(ending_index - 1) == EC {
@@ -1358,7 +1360,7 @@ impl Bfasm {
 
         // check that the match arms are sorted
 
-        // write!(self.output, "Matching chars at {index}\n").unwrap();
+        write!(self.output, "Matching chars at {index}\n").unwrap();
 
         let mut init_val = 0;
         for (index, (val, _)) in match_arms.iter().enumerate() {
@@ -1513,7 +1515,7 @@ impl Bfasm {
 
     pub fn bool_if(&mut self, index: usize, code: &[BfasmOps]) -> Result<(), BfasmError> {
 
-        // write!(self.output, "If at {index}\n").unwrap();
+        write!(self.output, "If at {index}\n").unwrap();
 
         self.move_to(index);
 
@@ -1564,7 +1566,7 @@ impl Bfasm {
 
     pub fn bool_while(&mut self, index: usize, code: &[BfasmOps]) -> Result<(), BfasmError> {
 
-        // write!(self.output, "While at {index}\n").unwrap();
+        write!(self.output, "While at {index}\n").unwrap();
 
         self.move_to(index);
 
@@ -1627,7 +1629,7 @@ impl Bfasm {
 
     pub fn greater_than(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Greater than at {index}\n").unwrap();
+        write!(self.output, "Greater than at {index}\n").unwrap();
 
         self.move_to(index + 4);
 
@@ -1652,7 +1654,7 @@ impl Bfasm {
 
     pub fn less_than(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Less than at {index}\n").unwrap();
+        write!(self.output, "Less than at {index}\n").unwrap();
 
         self.move_to(index + 3);
 
@@ -1677,7 +1679,7 @@ impl Bfasm {
 
     pub fn equals(&mut self, index: usize) -> Result<(), BfasmError> {
 
-        // write!(self.output, "Equals at {index}\n").unwrap();
+        write!(self.output, "Equals at {index}\n").unwrap();
 
         self.move_to(index + 4);
 

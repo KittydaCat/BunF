@@ -1418,7 +1418,7 @@ mod tests {
 
     #[test]
     fn program() {
-        let file = fs::read_to_string("./src/program.rs").unwrap();
+        let file = fs::read_to_string("./src/program.txt").unwrap();
 
         let file = &file[file.find("fn main()").unwrap()..];
 
@@ -1432,7 +1432,7 @@ mod tests {
 
         let mut vec2 = Vec::new();
 
-        let mut input = ",+.\0a".chars();
+        let mut input = ",+.\0a".chars(); // ,+.�a
 
         let mut code = dbg!(annostatements_to_bfasm(&mut vec2, &anno, &mut input));
         code.pop();
