@@ -1,6 +1,4 @@
-use std::str::Chars;
-
-#[derive(Debug, Clone)]
+use std::str::Chars;#[derive(Debug, Clone)]
 pub enum BFError {
     UnbalancedBrackets,
     NegativeArrayPointer,

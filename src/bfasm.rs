@@ -357,6 +357,13 @@ impl BfasmWriter {
             BfasmWriter::None => {}
         }
     }
+    fn replace(&mut self, old: &str, new: &str) {
+        match self {
+            BfasmWriter::String(str) => {*str = str.replace(old, new)}
+            BfasmWriter::BFInterp(binterp) => {binterp.program = binterp.program.replace(old, new)}
+            BfasmWriter::None => {}
+        }
+    }
 }
 
 impl Write for BfasmWriter {
@@ -1437,7 +1444,7 @@ impl Bfasm {
 
                     // dbg!("yay", val);
 
-                    let output = mem::take(&mut self.output);
+                    let output = mem::replace(&mut self.output, BfasmWriter::None);
 
                     // code.iter().for_each(|oper| {
                     //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
@@ -1498,13 +1505,13 @@ impl Bfasm {
         &mut self,
         code: &[BfasmOps],
         ret_index: usize,
-    ) -> Result<String, Option<Box<BfasmError>>> {
+    ) -> Result<BfasmWriter, Option<Box<BfasmError>>> {
 
         // dbg!(&self.array, "check start");
 
         let mut bfasm = Bfasm {
             array: self.array.clone(),
-            output: "".to_string(),
+            output: BfasmWriter::None,
             index: self.index,
             expected_input: String::new(),
             expected_output: String::new(),
@@ -1536,8 +1543,10 @@ impl Bfasm {
         // assert_eq!(dbg!(&bfasm.array).len(), dbg!(&self.array).len());
 
         if EmptyType::from_vec(&self.array) == EmptyType::from_vec(&bfasm.array) {
-            // dbg!(&self.array, "check end");
-            Ok(bfasm.output.replace("\n", "\n  "))
+            // change to an array
+            let mut output = bfasm.output;
+            output.replace("\n", "\n  ")
+            Ok(output)
         } else {
             // dbg!(&self.array, &bfasm.array, code, "match fail");
             Err(None)
@@ -1566,7 +1575,7 @@ impl Bfasm {
             let mut errs = Ok(());
 
             if cond {
-                let output = mem::take(&mut self.output);
+                let output = mem::replace(&mut self.output, BfasmWriter::None);
 
                 // code.iter().for_each(|oper| {
                 //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
@@ -1608,7 +1617,7 @@ impl Bfasm {
 
             let str = self.test_arm(code, index).map_err(|err| BfasmError::InvalidMatchArm(0, err))?;
 
-            let output = mem::take(&mut self.output);
+            let output = mem::replace(&mut self.output, BfasmWriter::None);
 
             // dbg!("while start");
 
