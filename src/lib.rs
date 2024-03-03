@@ -2,20 +2,7 @@ mod bfasm;
 mod program;
 
 use std::str::Chars;
-use crate::bfasm::{Bfasm, BfasmError, BfasmOps, EmptyType, Type};
-
-// #[derive(Debug)]
-// struct Variable (
-//     String,
-//     // value: Type,
-// );
-
-// the last type is the return value
-// #[derive(Debug)]
-// struct Function (
-//     Vec<EmptyType>,
-//     Vec<Statement>
-// );
+use crate::bfasm::{Bfasm, BfasmOps, EmptyType, OpError, Type};
 
 #[derive(PartialEq, Debug, Clone)]
 enum Function {
@@ -58,9 +45,6 @@ impl Function {
             Function::CloneU32(_) => Some(EmptyType::U32),
         }
     }
-}
-
-impl Function {
     fn parens_call(fn_name: &str, value: Option<Value>) -> Self {
         match fn_name {
             "input_str" => {
@@ -87,25 +71,6 @@ impl Function {
             }
         }
     }
-
-    // fn dot_call(fn_name: &str, var: &str, value: Option<Value>) -> Self {
-    //     match fn_name {
-    //         "len" => {
-    //             assert_eq!(value, None);
-    //             Function::Len(String::from(var))
-    //         }
-    //         "push" => {
-    //             if let Some(val) = value {
-    //                 Function::Push(String::from(var), val)
-    //             } else {
-    //                 panic!()
-    //             }
-    //         }
-    //         _ => {
-    //             panic!("Unknown function name: {}", fn_name)
-    //         }
-    //     }
-    // }
 
     // amount of space after the variable needed for the function
     // including EC and values passed into the function
@@ -151,8 +116,6 @@ enum Statement {
     Match(Value, Vec<(Type, Vec<Statement>)>),
     While(Value, Vec<Statement>),
     Function(Function),
-    // Assignment(String, Value) // replaced to make arrays it more consistent
-    // Return(Value),
 }
 
 impl Statement {
@@ -184,11 +147,6 @@ impl Statement {
 }
 
 type Variable = (String, EmptyType, usize);
-
-struct Scope<'a> {
-    current: Vec<Variable>,
-    above: Option<&'a mut Scope<'a>>,
-}
 
 type AnnotatedBlock = (Vec<AnnotatedStatement>, Vec<Variable>);
 
@@ -1394,7 +1352,7 @@ fn search_bf<'a>(
     })
 }
 
-fn bunf(program: &str, input: &mut Chars) -> Result<Bfasm, Vec<BfasmError>> {
+fn bunf(program: &str, input: &mut Chars) -> Result<Bfasm, Vec<OpError>> {
     let tokens = tokenize(program).unwrap();
 
     let statements = tokens_to_statements(&tokens).unwrap();
@@ -1403,11 +1361,12 @@ fn bunf(program: &str, input: &mut Chars) -> Result<Bfasm, Vec<BfasmError>> {
 
     let code = dbg!(annostatements_to_bfasm(&mut Vec::new(), &anno, input));
 
-    let mut bfasm = Bfasm::new();
+    let mut bfasm = Bfasm::default();
 
-    BfasmOps::full_exec(&code, &mut bfasm)?;
-
-    Ok(bfasm)
+    match BfasmOps::full_exec(&code, &mut bfasm).unwrap(){
+        None => {Ok(bfasm)}
+        Some(errs) => {Err(errs)}
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -1441,13 +1400,13 @@ mod tests {
 
         assert!(vec2.is_empty());
 
-        let mut bfasm = Bfasm::new();
+        let mut bfasm = Bfasm::default();
 
         for op in &code {
             op.exec_instruct(&mut bfasm).unwrap();
         }
 
-        dbg!(bfasm.output.len());
+        // dbg!(bfasm.output.len());
 
         assert!(bfasm.test_run().unwrap())
 
@@ -1457,7 +1416,7 @@ mod tests {
     fn test3() {
         let code = "";
 
-        let bfasm = bunf(code, &mut "a".chars()).unwrap();
+        let mut bfasm = bunf(code, &mut "a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 
@@ -1471,7 +1430,7 @@ mod tests {
         x.push(input_u32());\
         print_u32(x[0]);";
 
-        let bfasm = bunf(code, &mut "a".chars()).unwrap();
+        let mut bfasm = bunf(code, &mut "a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 
@@ -1490,7 +1449,7 @@ mod tests {
             array[array_index] += 1;
             print_u32(array[array_index]);";
 
-        let bfasm = bunf(code, &mut ",+.\0a".chars()).unwrap();
+        let mut bfasm = bunf(code, &mut ",+.\0a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 

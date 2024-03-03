@@ -1,4 +1,4 @@
-use std::str::Chars;#[derive(Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum BFError {
     UnbalancedBrackets,
     NegativeArrayPointer,
@@ -9,13 +9,62 @@ pub enum BFError {
     OutputFailed,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum BFOp {
+    Plus,
+    Minus,
+    Left,
+    Right,
+    Comma,
+    Period,
+    OpenBracket,
+    CloseBracket,
+    Lable,
+}
+
+impl BFOp {
+    pub fn from_str(s: &str) -> Vec<BFOp> {
+
+        let mut program = Vec::new();
+
+        s.chars().for_each(|char| match char {
+            '+' => program.push(BFOp::Plus),
+            '-' => program.push(BFOp::Minus),
+            '<' => program.push(BFOp::Left),
+            '>' => program.push(BFOp::Right),
+            ',' => program.push(BFOp::Comma),
+            '.' => program.push(BFOp::Period),
+            '[' => program.push(BFOp::OpenBracket),
+            ']' => program.push(BFOp::CloseBracket),
+            _ => {}
+        });
+
+        program
+    }
+
+    pub fn as_str(code: &Vec<BFOp>) -> String {
+        code.iter().map(|op|{
+            match op {
+                BFOp::Plus => '+',
+                BFOp::Minus => '-',
+                BFOp::Left => '<',
+                BFOp::Right => '>',
+                BFOp::Comma => ',',
+                BFOp::Period => '.',
+                BFOp::OpenBracket => '[',
+                BFOp::CloseBracket => ']',
+                BFOp::Lable => 'L',
+            }
+        }).collect()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct BFInterpreter {
     pub array: Vec<u32>,
     pub array_pointer: usize,
 
-    pub program: String,
+    pub program: Vec<BFOp>,
     pub program_index: usize,
 
     pub input: Vec<char>,
@@ -24,7 +73,7 @@ pub struct BFInterpreter {
 
 impl BFInterpreter {
     pub fn new(
-        program: String,
+        program: Vec<BFOp>,
     ) -> Self {
         // change to create?
 
@@ -49,8 +98,37 @@ impl BFInterpreter {
         )
     }
 
+    pub fn label_run(&mut self) -> Result<(), BFError> {
+
+        if let Some(BFOp::Lable) = self.program.get(self.program_index) {
+            self.program_index += 1;
+        }
+
+        while let Some(instruction) = self.program.get(self.program_index) {
+
+            if *instruction == BFOp::Lable {
+                break
+            }
+
+            exec_bf_instruction(
+                &mut self.array,
+                &mut self.array_pointer,
+                &self.program,
+                &mut self.input,
+                &mut self.output,
+                &mut self.program_index,
+                instruction,
+            )?;
+
+            self.program_index += 1;
+
+        }
+
+        Ok(())
+    }
+
     pub fn exec_one(&mut self) -> Result<(), BFError> {
-        if let Some(instruction) = self.program.chars().nth(self.program_index) {
+        if let Some(instruction) = self.program.get(self.program_index) {
             exec_bf_instruction(
                 &mut self.array,
                 &mut self.array_pointer,
@@ -79,7 +157,7 @@ impl BFInterpreter {
 pub fn run_bf(
     array: &mut Vec<u32>,
     array_index: &mut usize,
-    instructions: &str,
+    instructions: &Vec<BFOp>,
     input: &mut Vec<char>,
     output: &mut String,
     instruct_index: &mut usize,
@@ -88,7 +166,7 @@ pub fn run_bf(
         array.push(0);
     } // make sure the index is valid
 
-    while let Some(instruction) = instructions.chars().nth(*instruct_index) {
+    while let Some(instruction) = instructions.get(*instruct_index) {
         exec_bf_instruction(
             array,
             array_index,
@@ -107,18 +185,18 @@ pub fn run_bf(
 pub fn exec_bf_instruction(
     array: &mut Vec<u32>,
     array_index: &mut usize,
-    instructions: &str,
+    instructions: &Vec<BFOp>,
     input: &mut Vec<char>,
     output: &mut String,
     instruct_index: &mut usize,
-    instruction: char,
+    instruction: &BFOp,
 ) -> Result<(), BFError> {
     match instruction {
         // increment (>) and decrement (>)
-        '+' => {
+        BFOp::Plus => {
             array[*array_index] += 1;
         }
-        '-' => {
+        BFOp::Minus => {
             if array[*array_index] > 0 {
                 array[*array_index] -= 1;
             } else {
@@ -129,14 +207,14 @@ pub fn exec_bf_instruction(
         }
 
         // pointer left and right
-        '>' => {
+        BFOp::Right => {
             *array_index += 1;
 
             if *array_index == array.len() {
                 array.push(0);
             } // make sure the index is valid
         }
-        '<' => {
+        BFOp::Left => {
             if *array_index == 0 {
                 return Err(BFError::NegativeArrayPointer);
             };
@@ -144,18 +222,18 @@ pub fn exec_bf_instruction(
         }
 
         // loop stuff
-        '[' => {
+        BFOp::OpenBracket => {
             if array[*array_index] == 0 {
                 *instruct_index = equalize_brackets(instructions, *instruct_index, 1)?
             };
         }
-        ']' => {
+        BFOp::CloseBracket => {
             *instruct_index = equalize_brackets(instructions, *instruct_index, -1)? - 1;
         }
 
         // input (,) and output (.)
-        ',' => {
-            if input.len() > 0 {
+        BFOp::Comma => {
+            if input.len() == 0 {
                 return Err(BFError::InputFailed);
             }
             let char = input.remove(0);
@@ -165,29 +243,28 @@ pub fn exec_bf_instruction(
                 return Err(BFError::NonASCIIChar);
             }
         }
-        '.' => {
+        BFOp::Period => {
             if (array[*array_index] as u8).is_ascii() {
                 output.push(array[*array_index] as u8 as char)
             } else {
                 return Err(BFError::NonASCIIChar);
             }
         }
-        // 'd' => {dbg!(array, array_index);}
-        _ => {}
+        BFOp::Lable => {}
     }
 
     Ok(())
 }
 
-fn equalize_brackets(string: &str, mut index: usize, direction: isize) -> Result<usize, BFError> {
+fn equalize_brackets(program: &[BFOp], mut index: usize, direction: isize) -> Result<usize, BFError> {
     let mut depth = 0;
 
     'find_next_bracket: loop {
-        match string.chars().nth(index) {
-            Some('[') => {
+        match program.get(index) {
+            Some(BFOp::OpenBracket) => {
                 depth += 1;
             }
-            Some(']') => {
+            Some(BFOp::CloseBracket) => {
                 depth -= 1;
             }
 
