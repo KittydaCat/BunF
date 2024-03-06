@@ -42,7 +42,7 @@ impl BFOp {
         program
     }
 
-    pub fn as_str(code: &Vec<BFOp>) -> String {
+    pub fn as_str(code: &[BFOp]) -> String {
         code.iter().map(|op|{
             match op {
                 BFOp::Plus => '+',
@@ -62,89 +62,136 @@ impl BFOp {
 #[derive(Debug, Clone)]
 pub struct BFInterpreter {
     pub array: Vec<u32>,
-    pub array_pointer: usize,
+    pub array_index: usize,
 
-    pub program: Vec<BFOp>,
-    pub program_index: usize,
+    pub instructions: Vec<BFOp>,
+    pub instruction_index: usize,
 
     pub input: Vec<char>,
+    pub input_index: usize,
     pub output: String,
+}
+
+impl Default for BFInterpreter {
+    fn default() -> Self {
+        BFInterpreter::new(Vec::new(), Vec::new())
+    }
 }
 
 impl BFInterpreter {
     pub fn new(
-        program: Vec<BFOp>,
+        instructions: Vec<BFOp>,
+        input: Vec<char>
     ) -> Self {
         // change to create?
 
         Self {
             array: vec![0_u32],
-            array_pointer: 0,
-            program,
-            program_index: 0,
-            input: Vec::new(),
+            array_index: 0,
+            instructions,
+            instruction_index: 0,
+            input_index: 0,
+            input,
             output: String::new(),
         }
     }
 
     pub fn run(&mut self) -> Result<(), BFError> {
-        run_bf(
-            &mut self.array,
-            &mut self.array_pointer,
-            &self.program,
-            &mut self.input,
-            &mut self.output,
-            &mut self.program_index,
-        )
+        while self.instruction_index < self.instructions.len() {
+            self.exec_one()?;
+        }
+
+        Ok(())
     }
 
     pub fn label_run(&mut self) -> Result<(), BFError> {
 
-        if let Some(BFOp::Lable) = self.program.get(self.program_index) {
-            self.program_index += 1;
+        if let Some(BFOp::Lable) = self.instructions.get(self.instruction_index) {
+            self.instruction_index += 1;
         }
 
-        while let Some(instruction) = self.program.get(self.program_index) {
+        while let Some(instruction) = self.instructions.get(self.instruction_index) {
 
             if *instruction == BFOp::Lable {
                 break
             }
 
-            exec_bf_instruction(
-                &mut self.array,
-                &mut self.array_pointer,
-                &self.program,
-                &mut self.input,
-                &mut self.output,
-                &mut self.program_index,
-                instruction,
-            )?;
-
-            self.program_index += 1;
-
+            self.exec_one()?;
         }
 
         Ok(())
     }
 
     pub fn exec_one(&mut self) -> Result<(), BFError> {
-        if let Some(instruction) = self.program.get(self.program_index) {
-            exec_bf_instruction(
-                &mut self.array,
-                &mut self.array_pointer,
-                &self.program,
-                &mut self.input,
-                &mut self.output,
-                &mut self.program_index,
-                instruction,
-            )?;
 
-            self.program_index += 1;
+        let Some(instruction) = self.instructions.get(self.instruction_index)
+            else {return Err(BFError::InvalidInstructionIndex)};
 
-            Ok(())
-        } else {
-            Err(BFError::InvalidInstructionIndex)
+        match instruction {
+            // increment (>) and decrement (>)
+            BFOp::Plus => {
+                self.array[self.array_index] += 1;
+            }
+            BFOp::Minus => {
+                if self.array[self.array_index] > 0 {
+                    self.array[self.array_index] -= 1;
+                } else {
+                    let x = dbg!(self.instruction_index);
+                    dbg!(&self.instructions[x..x + 10]);
+                    return Err(BFError::NegativeCellValue)
+                }
+            }
+
+            // pointer left and right
+            BFOp::Right => {
+                self.array_index += 1;
+
+                if self.array_index == self.array.len() {
+                    self.array.push(0);
+                } // make sure the index is valid
+            }
+            BFOp::Left => {
+                if self.array_index == 0 {
+                    return Err(BFError::NegativeArrayPointer);
+                };
+                self.array_index -= 1;
+            }
+
+            // loop stuff
+            BFOp::OpenBracket => {
+                if self.array[self.array_index] == 0 {
+                    self.instruction_index = equalize_brackets(&self.instructions, self.instruction_index, 1)?
+                };
+            }
+            BFOp::CloseBracket => {
+                self.instruction_index = equalize_brackets(&self.instructions, self.instruction_index, -1)? - 1;
+            }
+
+            // input (,) and output (.)
+            BFOp::Comma => {
+                if self.input.is_empty() {
+                    return Err(BFError::InputFailed);
+                }
+                let char = *self.input.get(self.input_index).ok_or(BFError::InputFailed)?;
+                if char.is_ascii() {
+                    self.array[self.array_index] = char as u32
+                } else {
+                    return Err(BFError::NonASCIIChar);
+                }
+            }
+            BFOp::Period => {
+                if (self.array[self.array_index] as u8).is_ascii() {
+                    self.output.push(self.array[self.array_index] as u8 as char)
+                } else {
+                    return Err(BFError::NonASCIIChar);
+                }
+            }
+            BFOp::Lable => {}
         }
+
+        self.instruction_index += 1;
+
+        Ok(())
     }
 
     // pub fn reset(&mut self) ->(){
@@ -154,112 +201,10 @@ impl BFInterpreter {
     // }
 }
 
-pub fn run_bf(
-    array: &mut Vec<u32>,
-    array_index: &mut usize,
-    instructions: &Vec<BFOp>,
-    input: &mut Vec<char>,
-    output: &mut String,
-    instruct_index: &mut usize,
-) -> Result<(), BFError> {
-    while *array_index >= array.len() {
-        array.push(0);
-    } // make sure the index is valid
-
-    while let Some(instruction) = instructions.get(*instruct_index) {
-        exec_bf_instruction(
-            array,
-            array_index,
-            instructions,
-            input,
-            output,
-            instruct_index,
-            instruction,
-        )?;
-
-        *instruct_index += 1;
-    }
-    Ok(())
-}
-
-pub fn exec_bf_instruction(
-    array: &mut Vec<u32>,
-    array_index: &mut usize,
-    instructions: &Vec<BFOp>,
-    input: &mut Vec<char>,
-    output: &mut String,
-    instruct_index: &mut usize,
-    instruction: &BFOp,
-) -> Result<(), BFError> {
-    match instruction {
-        // increment (>) and decrement (>)
-        BFOp::Plus => {
-            array[*array_index] += 1;
-        }
-        BFOp::Minus => {
-            if array[*array_index] > 0 {
-                array[*array_index] -= 1;
-            } else {
-                let x = dbg!(*instruct_index);
-                dbg!(&instructions[x..x+10]);
-                return Err(BFError::NegativeCellValue)
-            }
-        }
-
-        // pointer left and right
-        BFOp::Right => {
-            *array_index += 1;
-
-            if *array_index == array.len() {
-                array.push(0);
-            } // make sure the index is valid
-        }
-        BFOp::Left => {
-            if *array_index == 0 {
-                return Err(BFError::NegativeArrayPointer);
-            };
-            *array_index -= 1;
-        }
-
-        // loop stuff
-        BFOp::OpenBracket => {
-            if array[*array_index] == 0 {
-                *instruct_index = equalize_brackets(instructions, *instruct_index, 1)?
-            };
-        }
-        BFOp::CloseBracket => {
-            *instruct_index = equalize_brackets(instructions, *instruct_index, -1)? - 1;
-        }
-
-        // input (,) and output (.)
-        BFOp::Comma => {
-            if input.len() == 0 {
-                return Err(BFError::InputFailed);
-            }
-            let char = input.remove(0);
-            if char.is_ascii() {
-                array[*array_index] = char as u32
-            } else {
-                return Err(BFError::NonASCIIChar);
-            }
-        }
-        BFOp::Period => {
-            if (array[*array_index] as u8).is_ascii() {
-                output.push(array[*array_index] as u8 as char)
-            } else {
-                return Err(BFError::NonASCIIChar);
-            }
-        }
-        BFOp::Lable => {}
-    }
-
-    Ok(())
-}
-
 fn equalize_brackets(program: &[BFOp], mut index: usize, direction: isize) -> Result<usize, BFError> {
     let mut depth = 0;
 
-    'find_next_bracket: loop {
+    loop {
         match program.get(index) {
             Some(BFOp::OpenBracket) => {
                 depth += 1;
@@ -275,7 +220,7 @@ fn equalize_brackets(program: &[BFOp], mut index: usize, direction: isize) -> Re
             }
         };
         if depth == 0 {
-            break 'find_next_bracket;
+            break;
         };
 
         index = match index.checked_add_signed(direction) {
