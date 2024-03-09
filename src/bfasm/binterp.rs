@@ -169,15 +169,17 @@ impl BFInterpreter {
 
             // input (,) and output (.)
             BFOp::Comma => {
-                if self.input.is_empty() {
-                    return Err(BFError::InputFailed);
-                }
+                // if self.input.is_empty() {
+                //     return Err(BFError::InputFailed);
+                // }
                 let char = *self.input.get(self.input_index).ok_or(BFError::InputFailed)?;
                 if char.is_ascii() {
                     self.array[self.array_index] = char as u32
                 } else {
                     return Err(BFError::NonASCIIChar);
                 }
+
+                self.input_index += 1;
             }
             BFOp::Period => {
                 if (self.array[self.array_index] as u8).is_ascii() {

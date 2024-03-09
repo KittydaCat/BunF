@@ -124,46 +124,46 @@ impl From<Vec<u32>> for Type {
     }
 }
 
-impl From<&Type> for Vec<u32> {
-    fn from(bf_type: &Type) -> Self {
-        match bf_type {
-            Type::U32(x) => {
-                vec![*x]
-            }
-            Type::I32(x) => {
-                vec![x.is_negative() as u32, x.unsigned_abs()]
-            }
-            Type::Bool(x) => {
-                vec![*x as u32]
-            }
-            Type::Char(x) => {
-                vec![*x as u32]
-            }
-            Type::FString(x) | Type::IString(x) => [
-                vec![0_u32, 0_u32],
-                x.iter()
-                    .rev()
-                    .flat_map(|char| [*char as u32, 0_u32])
-                    .collect(),
-                vec![0_u32, x.len() as u32],
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
-            Type::Array(x) => [
-                vec![0_u32, 0_u32],
-                x.iter().flat_map(|val| [*val + 1, 0_u32]).collect(),
-                vec![0_u32, x.len() as u32],
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
-            Type::EmptyCell => {
-                vec![0]
-            }
-        }
-    }
-}
+// impl From<&Type> for Vec<u32> {
+//     fn from(bf_type: &Type) -> Self {
+//         match bf_type {
+//             Type::U32(x) => {
+//                 vec![*x]
+//             }
+//             Type::I32(x) => {
+//                 vec![x.is_negative() as u32, x.unsigned_abs()]
+//             }
+//             Type::Bool(x) => {
+//                 vec![*x as u32]
+//             }
+//             Type::Char(x) => {
+//                 vec![*x as u32]
+//             }
+//             Type::FString(x) | Type::IString(x) => [
+//                 vec![0_u32, 0_u32],
+//                 x.iter()
+//                     .rev()
+//                     .flat_map(|char| [*char as u32, 0_u32])
+//                     .collect(),
+//                 vec![0_u32, x.len() as u32],
+//             ]
+//             .into_iter()
+//             .flatten()
+//             .collect(),
+//             Type::Array(x) => [
+//                 vec![0_u32, 0_u32],
+//                 x.iter().flat_map(|val| [*val + 1, 0_u32]).collect(),
+//                 vec![0_u32, x.len() as u32],
+//             ]
+//             .into_iter()
+//             .flatten()
+//             .collect(),
+//             Type::EmptyCell => {
+//                 vec![0]
+//             }
+//         }
+//     }
+// }
 
 impl From<&Type> for String {
     fn from(value: &Type) -> Self {
@@ -332,14 +332,20 @@ impl BfasmOps {
         if let BfasmWriter::BFInterp(binterp) = &mut bfasm.output {
             binterp.label_run().unwrap();
 
+            let interp = mem::take(binterp);
 
-            todo!();
+            assert!(bfasm.cmp_to_interp(&interp));
+
+            let BfasmWriter::BFInterp(binterp) = &mut bfasm.output else {unreachable!()};
+
+            let _ = mem::replace(binterp, interp);
         }
 
         res
     }
 
     pub fn exec(code: &[BfasmOps], bfasm: &mut Bfasm) -> Result<(), (usize, BfasmError)> {
+
         for (index, oper) in code.iter().enumerate() {
             oper.exec_instruct(bfasm).map_err(|err| (index, err))?;
         }
@@ -457,14 +463,14 @@ pub struct Bfasm {
 
 // pub type BfasmCode = Vec<Box<dyn Fn(&mut Bfasm) -> Result<(), BfasmError>>>;
 
-impl From<&Bfasm> for Vec<u32> {
-    fn from(bunf: &Bfasm) -> Self {
-        bunf.array
-            .iter()
-            .flat_map(<&Type as Into<Vec<u32>>>::into)
-            .collect()
-    }
-}
+// impl From<&Bfasm> for Vec<u32> {
+//     fn from(bunf: &Bfasm) -> Self {
+//         bunf.array
+//             .iter()
+//             .flat_map(<&Type as Into<Vec<u32>>>::into)
+//             .collect()
+//     }
+// }
 
 impl Default for Bfasm {
     fn default() -> Self {
@@ -490,16 +496,13 @@ impl Bfasm {
 
         interp.run()?;
 
-
         // println!("Found output: {}", output);
-        println!("Expected output: {}", self.expected_output);
+        println!("Expected output: \"{}\"", self.expected_output);
 
         Ok(self.cmp_to_interp(&interp))
     }
 
     fn cmp_to_interp(&mut self, interp: &BFInterpreter) -> bool {
-
-        // let expected: Vec<u32> = self.deref().into();
 
         self.get(self.index);
 
@@ -507,31 +510,112 @@ impl Bfasm {
 
         // cmp the array, output, and pointer
 
-        while let Some(&Type::EmptyCell) = self.array.last() {
-            self.array.pop();
-        }
+        let mut index = 0;
 
-        let mut x = 0;
+        dbg!(&self.array);
 
         for item in &self.array {
-            let slice = Vec::<u32>::from(item);
 
-            for cell in slice {
-                if cell != **interp.array.get(x).get_or_insert(&0) {
-                    return false;
+            if !match item {
+                Type::U32(x) => {
+                    let res = x == interp.array.get(index).unwrap_or(&0);
+                    index += 1;
+                    res
                 }
+                Type::I32(x) => {
+                    let mut res = {
+                        if *x != 0 {
 
-                x += 1;
+                            x.is_positive() == (*interp.array.get(index).unwrap_or(&0) == 0)
+
+                        } else {
+                            true
+                        }
+                    };
+
+                    res &= x.unsigned_abs() == *interp.array.get(index+1).unwrap_or(&0);
+
+                    index += 2;
+
+                    res
+                }
+                Type::Bool(x) => {
+                    let res = *interp.array.get(index).unwrap_or(&0) == *x as u32;
+
+                    index += 1;
+
+                    res
+                }
+                Type::Char(x) => {
+                    let res = *interp.array.get(index).unwrap_or(&0) == *x as u32;
+
+                    index += 1;
+
+                    res
+                }
+                Type::FString(x) | Type::IString(x) => {
+                    let mut res = *interp.array.get(index).unwrap_or(&0) == 0;
+
+                    res &= *interp.array.get(index+1).unwrap_or(&0) == 0;
+
+                    index += 2;
+
+                    for val in x.iter().rev() {
+                        res &= *interp.array.get(index).unwrap_or(&0) == *val as u32;
+                        res &= *interp.array.get(index+1).unwrap_or(&0) == 0;
+                        index += 2;
+                    }
+
+                    res &= *interp.array.get(index).unwrap_or(&0) == 0;
+                    res &= *interp.array.get(index+1).unwrap_or(&0) == x.len() as u32;
+
+                    index += 2;
+
+                    res
+                }
+                Type::Array(x) => {
+                    let mut res = *interp.array.get(index).unwrap_or(&0) == 0;
+
+                    res &= *interp.array.get(index+1).unwrap_or(&0) == 0;
+
+                    index += 2;
+
+                    for val in x.iter() {
+                        res &= *interp.array.get(index).unwrap_or(&0) == (*val + 1) ;
+                        res &= *interp.array.get(index+1).unwrap_or(&0) == 0;
+                        index += 2;
+                    }
+
+                    res &= *interp.array.get(index).unwrap_or(&0) == 0;
+                    res &= *interp.array.get(index+1).unwrap_or(&0) == x.len() as u32;
+
+                    index += 2;
+
+                    res
+                }
+                Type::EmptyCell => {
+                    let res = interp.array.get(index).unwrap_or(&0) == &0;
+
+                    index += 1;
+
+                    res
+                }
+            } {
+                dbg!(item, index);
+                return false;
             }
 
         };
 
         // make sure x did miss any values
-        if x < interp.array.len() {
-            return interp.array[x..].iter().all(|x| *x == 0);
+        if index < interp.array.len() {
+            if !interp.array[index..].iter().all(|x| *x == 0){
+                dbg!();
+                return false;
+            }
         }
 
-        interp.array_index == expected_index && interp.output == self.expected_output
+        dbg!(interp.array_index == expected_index) && dbg!(interp.output == self.expected_output)
     }
 
     fn get_slice(&mut self, index: usize, length: usize) -> &mut [Type] {
@@ -567,14 +651,16 @@ impl Bfasm {
         self.array.get_mut(index).unwrap()
     }
 
-    // fn trim_ec(&mut self) {
-    //
-    //     while Some(*Type::EmptyCell) = self.array.last() {
-    //
-    //         self.array.pop();
-    //
-    //     }
-    // }
+    fn trim_ec(&mut self) {
+
+        todo!();
+
+        while let Some(&Type::EmptyCell) = self.array.last() {
+
+            self.array.pop();
+
+        }
+    }
 
     fn move_to(&mut self, expected_index: usize) {
         let str = self.traverse(self.index, expected_index);
@@ -987,6 +1073,7 @@ impl Bfasm {
 
             Type::IString(str) => {
                 // self.expected_input.push_str(&String::from_utf8(str).unwrap());
+
                 self.expected_input
                     .push_str(&String::from_utf8(str.clone()).unwrap());
                 self.expected_input.push('\0');
@@ -2009,6 +2096,7 @@ mod tests {
 
     #[test]
     fn str_input() {
+
         let mut bunf = Bfasm::default();
 
         bunf.input_str(0, "hello").unwrap();
