@@ -1,25 +1,11 @@
-#![allow(dead_code)]
 mod bfasm;
 mod program;
 
 use std::str::Chars;
-use crate::bfasm::{Bfasm, BfasmError, BfasmOps, EmptyType, Type};
-
-// #[derive(Debug)]
-// struct Variable (
-//     String,
-//     // value: Type,
-// );
-
-// the last type is the return value
-// #[derive(Debug)]
-// struct Function (
-//     Vec<EmptyType>,
-//     Vec<Statement>
-// );
+use crate::bfasm::{Bfasm, BfasmOps, EmptyType, OpError, Type};
 
 #[derive(PartialEq, Debug, Clone)]
-enum Function {
+pub enum Function {
     IndexStr(String, Value),
     Index(String, Value),
     IndexSet(String, Value, Value),
@@ -59,9 +45,6 @@ impl Function {
             Function::CloneU32(_) => Some(EmptyType::U32),
         }
     }
-}
-
-impl Function {
     fn parens_call(fn_name: &str, value: Option<Value>) -> Self {
         match fn_name {
             "input_str" => {
@@ -89,50 +72,31 @@ impl Function {
         }
     }
 
-    // fn dot_call(fn_name: &str, var: &str, value: Option<Value>) -> Self {
-    //     match fn_name {
-    //         "len" => {
-    //             assert_eq!(value, None);
-    //             Function::Len(String::from(var))
-    //         }
-    //         "push" => {
-    //             if let Some(val) = value {
-    //                 Function::Push(String::from(var), val)
-    //             } else {
-    //                 panic!()
-    //             }
-    //         }
-    //         _ => {
-    //             panic!("Unknown function name: {}", fn_name)
-    //         }
-    //     }
-    // }
-
     // amount of space after the variable needed for the function
     // including EC and values passed into the function
-    fn len(&self) -> Option<usize> {
-        match self {
-            Function::Index(_, _) => Some(2),
-            Function::IndexSet(_, _, _) => Some(2),
-            Function::Assign(_, _) => Some(0),
-            Function::Add(_, _) => Some(0),
-            Function::Subtract(_, _) => Some(0),
-            Function::Equal(_, _) => Some(4),
-            Function::GreaterThan(_, _) => Some(4),
-            Function::LessThan(_, _) => Some(4),
-            Function::Len(_) => Some(2),
-            Function::Push(_, _) => Some(2),
-            Function::InputStr => None,    // ???
-            Function::NewArray => None,    // 3?
-            Function::InputU32 => Some(0), // 1?
-            Function::PrintU32(_) => Some(0),
-            Function::CloneU32(_) => Some(2),
-            Function::IndexStr(_, _) => Some(2),
-        }
-    }
+    // fn len(&self) -> Option<usize> {
+    //     match self {
+    //         Function::Index(_, _) => Some(2),
+    //         Function::IndexSet(_, _, _) => Some(2),
+    //         Function::Assign(_, _) => Some(0),
+    //         Function::Add(_, _) => Some(0),
+    //         Function::Subtract(_, _) => Some(0),
+    //         Function::Equal(_, _) => Some(4),
+    //         Function::GreaterThan(_, _) => Some(4),
+    //         Function::LessThan(_, _) => Some(4),
+    //         Function::Len(_) => Some(2),
+    //         Function::Push(_, _) => Some(2),
+    //         Function::InputStr => None,    // ???
+    //         Function::NewArray => None,    // 3?
+    //         Function::InputU32 => Some(0), // 1?
+    //         Function::PrintU32(_) => Some(0),
+    //         Function::CloneU32(_) => Some(2),
+    //         Function::IndexStr(_, _) => Some(2),
+    //     }
+    // }
 }
 #[derive(PartialEq, Debug, Clone)]
-enum Value {
+pub enum Value {
     Func(Box<Function>),
     Static(Type),
 }
@@ -147,90 +111,83 @@ impl Value {
 }
 
 #[derive(Debug)]
-enum Statement {
+pub enum Statement {
     If(Value, Vec<Statement>),
     Match(Value, Vec<(Type, Vec<Statement>)>),
     While(Value, Vec<Statement>),
     Function(Function),
-    // Assignment(String, Value) // replaced to make arrays it more consistent
-    // Return(Value),
 }
 
-impl Statement {
-    fn print(code: &[Statement]) {
-        for statement in code {
-            match statement {
-                Statement::If(ref cond, ref sub_code) => {
-                    println!("If {:?}:", cond);
-                    Statement::print(sub_code);
-                }
-                Statement::Match(ref cond, ref match_arms) => {
-                    println!("Match {:?}:", cond);
-
-                    for (cond, sub_code) in match_arms {
-                        println!("{:?} =>", cond);
-                        Statement::print(sub_code)
-                    }
-                }
-                Statement::While(ref cond, ref sub_code) => {
-                    println!("While {:?}:", cond);
-                    Statement::print(sub_code);
-                }
-                Statement::Function(_) => {
-                    println!("{:?}", statement);
-                }
-            }
-        }
-    }
-}
+// impl Statement {
+//     fn print(code: &[Statement]) {
+//         for statement in code {
+//             match statement {
+//                 Statement::If(ref cond, ref sub_code) => {
+//                     println!("If {:?}:", cond);
+//                     Statement::print(sub_code);
+//                 }
+//                 Statement::Match(ref cond, ref match_arms) => {
+//                     println!("Match {:?}:", cond);
+//
+//                     for (cond, sub_code) in match_arms {
+//                         println!("{:?} =>", cond);
+//                         Statement::print(sub_code)
+//                     }
+//                 }
+//                 Statement::While(ref cond, ref sub_code) => {
+//                     println!("While {:?}:", cond);
+//                     Statement::print(sub_code);
+//                 }
+//                 Statement::Function(_) => {
+//                     println!("{:?}", statement);
+//                 }
+//             }
+//         }
+//     }
+// }
 
 type Variable = (String, EmptyType, usize);
-
-struct Scope<'a> {
-    current: Vec<Variable>,
-    above: Option<&'a mut Scope<'a>>,
-}
 
 type AnnotatedBlock = (Vec<AnnotatedStatement>, Vec<Variable>);
 
 #[derive(Debug)]
-enum AnnotatedStatement {
+pub enum AnnotatedStatement {
     If(Value, AnnotatedBlock),
     Match(Value, Vec<(Type, AnnotatedBlock)>),
     While(Value, AnnotatedBlock),
     Function(Function),
 }
 
-impl AnnotatedStatement {
-    fn print(code: &[AnnotatedStatement]) {
-        for statement in code {
-            match statement {
-                AnnotatedStatement::If(ref cond, ref sub_code) => {
-                    println!("If {:?}:", cond);
-                    AnnotatedStatement::print(&sub_code.0);
-                }
-                AnnotatedStatement::Match(ref cond, ref match_arms) => {
-                    println!("Match {:?}:", cond);
-
-                    for (cond, sub_code) in match_arms {
-                        println!("{:?} =>", cond);
-                        AnnotatedStatement::print(&sub_code.0)
-                    }
-                }
-                AnnotatedStatement::While(ref cond, ref sub_code) => {
-                    println!("While {:?}:", cond);
-                    AnnotatedStatement::print(&sub_code.0);
-                }
-                AnnotatedStatement::Function(_) => {
-                    println!("{:?}", statement);
-                }
-            }
-        }
-    }
-}
+// impl AnnotatedStatement {
+//     fn print(code: &[AnnotatedStatement]) {
+//         for statement in code {
+//             match statement {
+//                 AnnotatedStatement::If(ref cond, ref sub_code) => {
+//                     println!("If {:?}:", cond);
+//                     AnnotatedStatement::print(&sub_code.0);
+//                 }
+//                 AnnotatedStatement::Match(ref cond, ref match_arms) => {
+//                     println!("Match {:?}:", cond);
+//
+//                     for (cond, sub_code) in match_arms {
+//                         println!("{:?} =>", cond);
+//                         AnnotatedStatement::print(&sub_code.0)
+//                     }
+//                 }
+//                 AnnotatedStatement::While(ref cond, ref sub_code) => {
+//                     println!("While {:?}:", cond);
+//                     AnnotatedStatement::print(&sub_code.0);
+//                 }
+//                 AnnotatedStatement::Function(_) => {
+//                     println!("{:?}", statement);
+//                 }
+//             }
+//         }
+//     }
+// }
 
 #[derive(Debug, PartialEq)]
-enum Token {
+pub enum Token {
     Let,
     Equal,
     // DoubleEqual,
@@ -292,7 +249,7 @@ enum Token {
 // struct TokenizeError(usize, Option<char>, String);
 
 // either returns the tokens or the point of failure
-fn tokenize(code: &str) -> Option<Vec<Token>> {
+pub fn tokenize(code: &str) -> Option<Vec<Token>> {
     let mut char_iter = code.chars().enumerate();
 
     let mut tokens = Vec::new();
@@ -368,7 +325,7 @@ fn next_word(iter: &mut std::iter::Enumerate<Chars>) -> Option<(String, (usize, 
     None
 }
 
-fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
+pub fn tokens_to_statements(tokens: &[Token]) -> Result<Vec<Statement>, Option<usize>> {
     use Token as T;
 
     let mut index = 0;
@@ -647,7 +604,7 @@ fn find_next_balanced(tokens: &[Token], mut index: usize) -> usize {
     index
 }
 
-fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
+pub fn tokens_to_value(tokens: &[Token]) -> Option<Value> {
 
     // dbg!(tokens);
 
@@ -786,7 +743,7 @@ fn str_to_type(value: &str) -> Option<Type> {
 }
 
 // lables each variable with the amount of space it needs
-fn annotate_statements(statements: &[Statement], scope: &mut Vec<Vec<Variable>>) -> AnnotatedBlock {
+pub fn annotate_statements(statements: &[Statement], scope: &mut Vec<Vec<Variable>>) -> AnnotatedBlock {
     scope.push(Vec::new());
 
     let anno_states = statements
@@ -909,7 +866,7 @@ fn increase_req_space(scope: &mut [Vec<Variable>], var_name: &str, min_val: usiz
     }
 }
 
-fn annostatements_to_bfasm(
+pub fn annostatements_to_bfasm(
     bf_array: &mut Vec<(Option<String>, EmptyType)>,
     anno_states: &AnnotatedBlock,
     input: &mut Chars,
@@ -1138,8 +1095,7 @@ fn annostatements_to_bfasm(
                 if anno_states
                     .1
                     .iter()
-                    .find(|(anno_var, _, _)| anno_var == found_var)
-                    .is_some()
+                    .any(|(anno_var, _, _)| anno_var == found_var)
                 {
                     bfasm_ops.push(BfasmOps::Clear(index));
 
@@ -1323,7 +1279,7 @@ fn eval_value(value: &Value, bf_array: &mut Vec<(Option<String>, EmptyType)>, in
                     // })]
 
                     let str = dbg!(input.take_while(|char| *char != '\0').collect::<String>());
-                    assert!(str.len() > 0);
+                    assert!(!str.is_empty());
 
                     vec![BfasmOps::Input(
                         target_index,
@@ -1395,7 +1351,7 @@ fn search_bf<'a>(
     })
 }
 
-fn bunf(program: &str, input: &mut Chars) -> Result<Bfasm, Vec<BfasmError>> {
+pub fn bunf(program: &str, input: &mut Chars) -> Result<Bfasm, Vec<OpError>> {
     let tokens = tokenize(program).unwrap();
 
     let statements = tokens_to_statements(&tokens).unwrap();
@@ -1404,11 +1360,12 @@ fn bunf(program: &str, input: &mut Chars) -> Result<Bfasm, Vec<BfasmError>> {
 
     let code = dbg!(annostatements_to_bfasm(&mut Vec::new(), &anno, input));
 
-    let mut bfasm = Bfasm::new();
+    let mut bfasm = Bfasm::default();
 
-    BfasmOps::full_exec(&code, &mut bfasm)?;
-
-    Ok(bfasm)
+    match BfasmOps::full_exec(&code, &mut bfasm).unwrap(){
+        None => {Ok(bfasm)}
+        Some(errs) => {Err(errs)}
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -1442,13 +1399,13 @@ mod tests {
 
         assert!(vec2.is_empty());
 
-        let mut bfasm = Bfasm::new();
+        let mut bfasm = Bfasm::default();
 
         for op in &code {
             op.exec_instruct(&mut bfasm).unwrap();
         }
 
-        dbg!(bfasm.output.len());
+        // dbg!(bfasm.output.len());
 
         assert!(bfasm.test_run().unwrap())
 
@@ -1458,7 +1415,7 @@ mod tests {
     fn test3() {
         let code = "";
 
-        let bfasm = bunf(code, &mut "a".chars()).unwrap();
+        let mut bfasm = bunf(code, &mut "a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 
@@ -1472,7 +1429,7 @@ mod tests {
         x.push(input_u32());\
         print_u32(x[0]);";
 
-        let bfasm = bunf(code, &mut "a".chars()).unwrap();
+        let mut bfasm = bunf(code, &mut "a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 
@@ -1491,7 +1448,7 @@ mod tests {
             array[array_index] += 1;
             print_u32(array[array_index]);";
 
-        let bfasm = bunf(code, &mut ",+.\0a".chars()).unwrap();
+        let mut bfasm = bunf(code, &mut ",+.\0a".chars()).unwrap();
 
         dbg!(&bfasm.expected_input);
 

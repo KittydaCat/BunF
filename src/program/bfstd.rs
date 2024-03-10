@@ -34,6 +34,6 @@ pub fn print_u32(str: u32) {
     print!("{}", str as u8 as char);
 }
 
-pub fn print_array(string: Vec<u32>) {
-    println!("{:?}", string);
-}
+// pub fn print_array(string: Vec<u32>) {
+//     println!("{:?}", string);
+// }
