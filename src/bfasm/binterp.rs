@@ -67,21 +67,21 @@ pub struct BFInterpreter {
     pub instructions: Vec<BFOp>,
     pub instruction_index: usize,
 
-    pub input: Vec<char>,
+    pub input: String,
     pub input_index: usize,
     pub output: String,
 }
 
 impl Default for BFInterpreter {
     fn default() -> Self {
-        BFInterpreter::new(Vec::new(), Vec::new())
+        BFInterpreter::new(Vec::new(), String::new())
     }
 }
 
 impl BFInterpreter {
     pub fn new(
         instructions: Vec<BFOp>,
-        input: Vec<char>
+        input: String
     ) -> Self {
         // change to create?
 
@@ -172,7 +172,7 @@ impl BFInterpreter {
                 // if self.input.is_empty() {
                 //     return Err(BFError::InputFailed);
                 // }
-                let char = *self.input.get(self.input_index).ok_or(BFError::InputFailed)?;
+                let char = self.input.chars().nth(self.input_index).ok_or(BFError::InputFailed)?;
                 if char.is_ascii() {
                     self.array[self.array_index] = char as u32
                 } else {

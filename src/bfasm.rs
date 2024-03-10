@@ -14,7 +14,7 @@ use crate::bfasm::BfasmError::TypeMismatch;
 macro_rules! label {
     ($dst:expr, $($arg:tt)*) => {
         write!($dst, $($arg)*).unwrap();
-        if let BfasmWriter::BFInterp(binterp) = &mut $dst {
+        if let BfasmWriter::BFInterp(binterp, _) = &mut $dst {
             binterp.instructions.push(BFOp::Lable)
         }
     };
@@ -329,14 +329,18 @@ impl BfasmOps {
             BfasmOps::CharToU32(index) => bfasm.char_to_u32(*index),
         };
 
-        if let BfasmWriter::BFInterp(binterp) = &mut bfasm.output {
+        if let BfasmWriter::BFInterp(binterp, _) = &mut bfasm.output {
+            binterp.input = bfasm.expected_input.clone();
+
+            dbg!(self, &bfasm.array, bfasm.index);
+
             binterp.label_run().unwrap();
 
             let interp = mem::take(binterp);
 
             assert!(bfasm.cmp_to_interp(&interp));
 
-            let BfasmWriter::BFInterp(binterp) = &mut bfasm.output else {unreachable!()};
+            let BfasmWriter::BFInterp(binterp, _) = &mut bfasm.output else {unreachable!()};
 
             let _ = mem::replace(binterp, interp);
         }
@@ -383,17 +387,18 @@ impl BfasmOps {
 
 #[derive(Debug, Clone)]
 pub enum BfasmWriter {
-    String(String),
-    BFInterp(BFInterpreter),
-    None,
+    String(String, bool),
+    BFInterp(BFInterpreter, bool),
+    // None,
 }
 
 impl Display for BfasmWriter {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            BfasmWriter::String(str) => {f.write_str(str)}
-            BfasmWriter::BFInterp(binterp) => {f.write_str(&BFOp::as_str(&binterp.instructions))}
-            BfasmWriter::None => {panic!()}
+            BfasmWriter::String(str, true) => {f.write_str(str)}
+            BfasmWriter::BFInterp(binterp, true) => {f.write_str(&BFOp::as_str(&binterp.instructions))}
+            // BfasmWriter::None => {panic!()}
+            _ => {Ok(())}
         }
     }
 }
@@ -401,15 +406,16 @@ impl Display for BfasmWriter {
 impl BfasmWriter {
     fn push_str(&mut self, s: &str) {
         match self {
-            BfasmWriter::String(str) => {str.push_str(s)}
-            BfasmWriter::BFInterp(_) => {s.chars().for_each(|char| self.push(char))}
-            BfasmWriter::None => {}
+            BfasmWriter::String(str, true) => {str.push_str(s)}
+            BfasmWriter::BFInterp(_, true) => {s.chars().for_each(|char| self.push(char))}
+            // BfasmWriter::None => {}
+            _ => {}
         }
     }
     fn push(&mut self, s: char) {
         match self {
-            BfasmWriter::String(str) => {str.push(s)}
-            BfasmWriter::BFInterp(binterp) => {
+            BfasmWriter::String(str, true) => {str.push(s)}
+            BfasmWriter::BFInterp(binterp, true) => {
                 match s {
                     '+' => binterp.instructions.push(BFOp::Plus),
                     '-' => binterp.instructions.push(BFOp::Minus),
@@ -422,22 +428,29 @@ impl BfasmWriter {
                     _ => {}
                 };
             }
-            BfasmWriter::None => {}
+            // BfasmWriter::None => {}
+            _ => {}
         }
     }
-    // fn replace(&mut self, old: &str, new: &str) {
-    //     match self {
-    //         BfasmWriter::String(str) => {*str = str.replace(old, new)}
-    //         BfasmWriter::BFInterp(_) => {}
-    //         BfasmWriter::None => {}
-    //     }
-    // }
 
+    // TODO: doesnt have to be an option
     fn as_bfops(&self) -> Option<Vec<BFOp>> {
         match self {
-            BfasmWriter::String(str) => {Some(BFOp::from_str(str))}
-            BfasmWriter::BFInterp(binterp) => {Some(binterp.instructions.clone())}
-            BfasmWriter::None => {None}
+            BfasmWriter::String(str, _) => {Some(BFOp::from_str(str))}
+            BfasmWriter::BFInterp(binterp, _) => {Some(binterp.instructions.clone())}
+            // BfasmWriter::None => {None}
+        }
+    }
+
+    fn is_enabled(&self) -> bool {
+        match self {
+            BfasmWriter::String(_, b)| BfasmWriter::BFInterp(_, b) => {*b}
+        }
+    }
+
+    fn enabled(&mut self, val: bool) {
+        match self {
+            BfasmWriter::String(_, x) | BfasmWriter::BFInterp(_, x) => {*x = val}
         }
     }
 }
@@ -475,7 +488,7 @@ pub struct Bfasm {
 impl Default for Bfasm {
     fn default() -> Self {
         // Self::new(BfasmWriter::String(String::new()))
-        Self::new(BfasmWriter::BFInterp(BFInterpreter::default()))
+        Self::new(BfasmWriter::BFInterp(BFInterpreter::default(), true))
     }
 }
 
@@ -506,13 +519,14 @@ impl Bfasm {
 
         self.get(self.index);
 
-        let expected_index = Type::len_slice(dbg!(&self.array[0..self.index]));
+        let expected_index = dbg!(Type::len_slice(dbg!(&self.array[0..self.index])));
+        dbg!(self.index, interp.array_index);
 
         // cmp the array, output, and pointer
 
         let mut index = 0;
 
-        dbg!(&self.array);
+        // dbg!(&self.array);
 
         for item in &self.array {
 
@@ -1554,7 +1568,8 @@ impl Bfasm {
 
                     // dbg!("yay", val);
 
-                    let output = mem::replace(&mut self.output, BfasmWriter::None);
+                    let output = self.output.is_enabled();
+                    self.output.enabled(false);
 
                     // code.iter().for_each(|oper| {
                     //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
@@ -1573,7 +1588,7 @@ impl Bfasm {
 
                     self.index = bunf_index;
 
-                    self.output = output;
+                    self.output.enabled(output);
                 }
                 self.output.push_str(&str);
                 self.output.push_str("\n]<<<\n");
@@ -1620,7 +1635,7 @@ impl Bfasm {
 
         let mut bfasm = Bfasm {
             array: self.array.clone(),
-            output: BfasmWriter::String(String::new()),
+            output: BfasmWriter::String(String::new(), true),
             index: self.index,
             expected_input: String::new(),
             expected_output: String::new(),
@@ -1667,7 +1682,7 @@ impl Bfasm {
 
         if EmptyType::from_vec(&self.array) == EmptyType::from_vec(&bfasm.array) {
             // add better formatting
-            let BfasmWriter::String(output) = bfasm.output else {unreachable!()};
+            let BfasmWriter::String(output, true) = bfasm.output else {unreachable!()};
             Some(output.replace('\n', "\n  "))
         } else {
             dbg!(&self.array, &bfasm.array, code, "match fail");
@@ -1697,7 +1712,8 @@ impl Bfasm {
             let mut errs = None;
 
             if cond {
-                let output = mem::replace(&mut self.output, BfasmWriter::None);
+                let output = self.output.is_enabled();
+                self.output.enabled(false);
 
                 // code.iter().for_each(|oper| {
                 //     oper.exec_instruct(self).expect("Any error should have been caught when validating")
@@ -1708,7 +1724,7 @@ impl Bfasm {
 
                 self.index = index;
 
-                self.output = output;
+                self.output.enabled(output);
             }
 
             write!(self.output, "[[-]\n{str}]\n").unwrap();
@@ -1739,7 +1755,8 @@ impl Bfasm {
 
             let str = self.test_arm(code, index).ok_or(BfasmError::InvalidMatchArm(0))?;
 
-            let output = mem::replace(&mut self.output, BfasmWriter::None);
+            let output = self.output.is_enabled();
+            self.output.enabled(false);
 
             // dbg!("while start");
 
@@ -1764,7 +1781,7 @@ impl Bfasm {
                 }
             }
 
-            self.output = output;
+            self.output.enabled(output);
             write!(self.output, "[\n{str}]\n").unwrap();
             self.array[index] = EC;
 
@@ -1884,6 +1901,28 @@ mod tests {
         //   execute instruction
 
         //   if the end of the string is reached break
+    }
+
+    #[test]
+    fn move_test2() {
+
+        let mut bfasm = Bfasm::default();
+
+        bfasm.set(0, Type::IString(vec![44,43,46])).unwrap();
+
+        bfasm.set(3, Type::U32(0)).unwrap();
+        // bfasm.set(4, Type::U32(0)).unwrap();
+
+        bfasm.set(6, Type::Array(vec![0])).unwrap();
+
+        bfasm.set(9, Type::U32(0)).unwrap();
+        bfasm.set(12, Type::Bool(false)).unwrap();
+
+        bfasm.move_to(5);
+
+        bfasm.copy_val(3).unwrap();
+
+        assert!(bfasm.test_run().unwrap())
     }
 
     #[test]
