@@ -1926,6 +1926,23 @@ mod tests {
     }
 
     #[test]
+    fn move_test22() {
+
+        let mut bfasm = Bfasm::default();
+
+        BfasmOps::exec(&[
+            BfasmOps::Set(0, Type::IString(vec![44, 43, 46])),
+            BfasmOps::Set(3, Type::U32(0)),
+            BfasmOps::Set(6, Type::Array(vec![0])),
+            BfasmOps::Set(9, Type::U32(0)),
+            BfasmOps::Set(12, Type::Bool(false)),
+            BfasmOps::MoveTo(5),
+            BfasmOps::CopyVal(3),
+                          ], &mut bfasm).unwrap();
+        assert!(bfasm.test_run().unwrap())
+    }
+
+    #[test]
     fn array_test2() {
 
         let mut bfasm = Bfasm::default();
