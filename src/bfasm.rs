@@ -1748,12 +1748,12 @@ impl Bfasm {
 
         self.move_to(index);
 
-        let slice = self.get(index);
+        let slice = self.get(self.index);
 
         if let Type::Bool(bool) = slice {
             let mut cond = *bool;
 
-            let str = self.test_arm(code, index).ok_or(BfasmError::InvalidMatchArm(0))?;
+            let str = self.test_arm(code, self.index).ok_or(BfasmError::InvalidMatchArm(0))?;
 
             let output = self.output.is_enabled();
             self.output.enabled(false);
@@ -1764,9 +1764,10 @@ impl Bfasm {
 
             while cond {
                 errs = BfasmOps::full_exec(code, self).unwrap();
-                    // .expect("Any error should have been caught when validating");
 
-                self.index = index;
+                self.move_to(index);
+
+                // self.index = index;
 
                 if errs.is_some(){
                     break

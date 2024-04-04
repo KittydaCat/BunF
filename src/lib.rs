@@ -1476,6 +1476,18 @@ mod tests {
 
         assert!(bunf(code, &mut "".chars()).unwrap().test_run().unwrap())
     }
+    #[test]
+    fn anno_test2() {
+        let code = "\
+        let x = 5;\
+        let y = 0;\
+        while x > 0 {\
+            y += 1;
+            x -= 1;
+        }";
+
+        assert!(bunf(code, &mut "".chars()).unwrap().test_run().unwrap())
+    }
 
     #[test]
     fn match_test() {
