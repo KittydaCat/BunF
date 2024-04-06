@@ -20,6 +20,7 @@ pub enum BFOp {
     OpenBracket,
     CloseBracket,
     Lable,
+    Comment(char),
 }
 
 impl BFOp {
@@ -36,7 +37,7 @@ impl BFOp {
             '.' => program.push(BFOp::Period),
             '[' => program.push(BFOp::OpenBracket),
             ']' => program.push(BFOp::CloseBracket),
-            _ => {}
+            x => program.push(BFOp::Comment(char)),
         });
 
         program
@@ -54,6 +55,7 @@ impl BFOp {
                 BFOp::OpenBracket => '[',
                 BFOp::CloseBracket => ']',
                 BFOp::Lable => 'L',
+                BFOp::Comment(x) => *x,
             }
         }).collect()
     }
@@ -188,7 +190,7 @@ impl BFInterpreter {
                     return Err(BFError::NonASCIIChar);
                 }
             }
-            BFOp::Lable => {}
+            BFOp::Lable | BFOp::Comment(_) => {}
         }
 
         self.instruction_index += 1;

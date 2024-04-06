@@ -14,9 +14,12 @@ use crate::bfasm::BfasmError::TypeMismatch;
 macro_rules! label {
     ($dst:expr, $($arg:tt)*) => {
         write!($dst, $($arg)*).unwrap();
-        if let BfasmWriter::BFInterp(binterp, _) = &mut $dst {
-            binterp.instructions.push(BFOp::Lable)
-        }
+
+        // if let BfasmWriter::BFInterp(binterp, _) = &mut $dst {
+        //     binterp.instructions.push(BFOp::Lable)
+        // }
+
+        $dst.as_mut_bfops().push(BFOp::Lable)
     };
 }
 
@@ -387,77 +390,106 @@ impl BfasmOps {
 
 #[derive(Debug, Clone)]
 pub enum BfasmWriter {
-    String(String, bool),
+    BFOps(Vec<BFOp>, bool),
     BFInterp(BFInterpreter, bool),
-    // None,
 }
 
-impl Display for BfasmWriter {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            BfasmWriter::String(str, true) => {f.write_str(str)}
-            BfasmWriter::BFInterp(binterp, true) => {f.write_str(&BFOp::as_str(&binterp.instructions))}
-            // BfasmWriter::None => {panic!()}
-            _ => {Ok(())}
-        }
-    }
-}
+// make it look good before use
+// use debug fmt else
+// impl Display for BfasmWriter {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+//
+//         f.write_str(&BFOp::as_str(self.as_bfops()))
+//
+//     }
+// }
 
 impl BfasmWriter {
-    fn push_str(&mut self, s: &str) {
-        match self {
-            BfasmWriter::String(str, true) => {str.push_str(s)}
-            BfasmWriter::BFInterp(_, true) => {s.chars().for_each(|char| self.push(char))}
+    fn code(&mut self, s: &str) {
+        let program = match self {
+            BfasmWriter::BFOps(program, true) => { program }
+            BfasmWriter::BFInterp(binterp, true) => { &mut binterp.instructions }
             // BfasmWriter::None => {}
-            _ => {}
-        }
-    }
-    fn push(&mut self, s: char) {
-        match self {
-            BfasmWriter::String(str, true) => {str.push(s)}
-            BfasmWriter::BFInterp(binterp, true) => {
-                match s {
-                    '+' => binterp.instructions.push(BFOp::Plus),
-                    '-' => binterp.instructions.push(BFOp::Minus),
-                    '<' => binterp.instructions.push(BFOp::Left),
-                    '>' => binterp.instructions.push(BFOp::Right),
-                    ',' => binterp.instructions.push(BFOp::Comma),
-                    '.' => binterp.instructions.push(BFOp::Period),
-                    '[' => binterp.instructions.push(BFOp::OpenBracket),
-                    ']' => binterp.instructions.push(BFOp::CloseBracket),
-                    _ => {}
-                };
+            _ => { return; }
+        };
+
+        for char in s.chars() {
+            match char {
+                '+' => program.push(BFOp::Plus),
+                '-' => program.push(BFOp::Minus),
+                '<' => program.push(BFOp::Left),
+                '>' => program.push(BFOp::Right),
+                ',' => program.push(BFOp::Comma),
+                '.' => program.push(BFOp::Period),
+                '[' => program.push(BFOp::OpenBracket),
+                ']' => program.push(BFOp::CloseBracket),
+                _ => {}
             }
-            // BfasmWriter::None => {}
-            _ => {}
         }
     }
 
+    fn extend(&mut self, code: Vec<BFOp>) {
+
+        // let bfops = self.as_bfops();
+        // code.iter().for_each(|x| bfops.push(x.clone()))
+
+        self.as_mut_bfops().extend(code);
+
+    }
+
+    // fn push(&mut self, s: char) {
+    //     match self {
+    //         BfasmWriter::String(str, true) => {str.push(s)}
+    //         BfasmWriter::BFInterp(binterp, true) => {
+    //             match s {
+    //                 '+' => binterp.instructions.push(BFOp::Plus),
+    //                 '-' => binterp.instructions.push(BFOp::Minus),
+    //                 '<' => binterp.instructions.push(BFOp::Left),
+    //                 '>' => binterp.instructions.push(BFOp::Right),
+    //                 ',' => binterp.instructions.push(BFOp::Comma),
+    //                 '.' => binterp.instructions.push(BFOp::Period),
+    //                 '[' => binterp.instructions.push(BFOp::OpenBracket),
+    //                 ']' => binterp.instructions.push(BFOp::CloseBracket),
+    //                 _ => {}
+    //             };
+    //         }
+    //         // BfasmWriter::None => {}
+    //         _ => {}
+    //     }
+    // }
+
     // TODO: doesnt have to be an option
-    fn as_bfops(&self) -> Option<Vec<BFOp>> {
+    fn as_bfops(&self) -> &Vec<BFOp> {
         match self {
-            BfasmWriter::String(str, _) => {Some(BFOp::from_str(str))}
-            BfasmWriter::BFInterp(binterp, _) => {Some(binterp.instructions.clone())}
+            BfasmWriter::BFOps(str, _) => {str}
+            BfasmWriter::BFInterp(binterp, _) => {&binterp.instructions}
+            // BfasmWriter::None => {None}
+        }
+    }
+    fn as_mut_bfops(&mut self) -> &mut Vec<BFOp> {
+        match self {
+            BfasmWriter::BFOps(str, _) => {str}
+            BfasmWriter::BFInterp(binterp, _) => {&mut binterp.instructions}
             // BfasmWriter::None => {None}
         }
     }
 
     fn is_enabled(&self) -> bool {
         match self {
-            BfasmWriter::String(_, b)| BfasmWriter::BFInterp(_, b) => {*b}
+            BfasmWriter::BFOps(_, b)| BfasmWriter::BFInterp(_, b) => {*b}
         }
     }
 
     fn enabled(&mut self, val: bool) {
         match self {
-            BfasmWriter::String(_, x) | BfasmWriter::BFInterp(_, x) => {*x = val}
+            BfasmWriter::BFOps(_, x) | BfasmWriter::BFInterp(_, x) => {*x = val}
         }
     }
 }
 
 impl Write for BfasmWriter {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.push_str(s);
+        self.code(s);
         Ok(())
     }
 }
@@ -505,7 +537,7 @@ impl Bfasm {
 
     pub fn test_run(&mut self) -> Result<bool, BFError> {
 
-        let mut interp = BFInterpreter::new(self.output.as_bfops().unwrap(), self.expected_input.chars().collect());
+        let mut interp = BFInterpreter::new(self.output.as_bfops().clone(), self.expected_input.chars().collect());
 
         interp.run()?;
 
@@ -679,7 +711,7 @@ impl Bfasm {
     fn move_to(&mut self, expected_index: usize) {
         let str = self.traverse(self.index, expected_index);
 
-        self.output.push_str(&str);
+        self.output.code(&str);
 
         self.index = expected_index;
     }
@@ -755,7 +787,7 @@ impl Bfasm {
                 let x = self.get_slice(index, 1);
                 if x == [EC] {
                     self.array[index] = Type::Bool(val);
-                    self.output.push_str(if val { "+>\n" } else { ">\n" });
+                    self.output.code(if val { "+>\n" } else { ">\n" });
                 } else {
                     return Err(TypeMismatch(vec![EEC], Vec::from(x)));
                 }
@@ -896,12 +928,12 @@ impl Bfasm {
                 self.move_to(index);
 
                 self.array[index] = Type::EmptyCell;
-                self.output.push_str("[-]\n");
+                self.output.code("[-]\n");
             }
             Type::I32(_) => {
                 self.move_to(index);
 
-                self.output.push_str("[-]>[-]\n");
+                self.output.code("[-]>[-]\n");
                 self.array[index] = Type::EmptyCell;
                 self.array.insert(index, Type::EmptyCell);
 
@@ -913,7 +945,7 @@ impl Bfasm {
 
                 self.move_to(index);
 
-                self.output.push_str(">>[[-]>>]>[-]\n");
+                self.output.code(">>[[-]>>]>[-]\n");
                 self.array[index] = Type::EmptyCell;
 
                 (0..len).for_each(|_| self.array.insert(index, Type::EmptyCell));
@@ -933,7 +965,7 @@ impl Bfasm {
                 if rest.iter().all(|x| *x == Type::EmptyCell) {
 
                     self.array[index] = Type::EmptyCell;
-                    self.output.push_str("<[-]<<<[[-]<<]\n");
+                    self.output.code("<[-]<<<[[-]<<]\n");
 
                     self.index = index;
 
@@ -955,7 +987,7 @@ impl Bfasm {
                 let found = self.get_slice(index, 3);
                 if let [val @ Type::U32(_), EC, EC] = found {
                     self.array[index + 1] = val.clone();
-                    self.output.push_str("[->+>+<<]>>[-<<+>>]\n");
+                    self.output.code("[->+>+<<]>>[-<<+>>]\n");
                     self.index += 2;
                 } else {
                     return Err(TypeMismatch(
@@ -971,8 +1003,8 @@ impl Bfasm {
                     self.array.remove(index + 2);
                     self.index += 2;
 
-                    self.output.push_str("[->>+>>+<<<<]>>>>[-<<<<+>>>>]");
-                    self.output.push_str("<<<[->>+>+<<<]>>>[-<<<+>>>]\n");
+                    self.output.code("[->>+>>+<<<<]>>>>[-<<<<+>>>>]");
+                    self.output.code("<<<[->>+>+<<<]>>>[-<<<+>>>]\n");
                 } else {
                     return Err(TypeMismatch(
                         vec![EmptyType::I32, EEC, EEC, EEC],
@@ -984,7 +1016,7 @@ impl Bfasm {
                 let found = self.get_slice(index, 3);
                 if let [val @ Type::Bool(_), EC, EC] = found {
                     self.array[index + 1] = val.clone();
-                    self.output.push_str("[->+>+<<]>>[-<<+>>]\n");
+                    self.output.code("[->+>+<<]>>[-<<+>>]\n");
                     self.index += 2;
                 } else {
                     return Err(TypeMismatch(
@@ -997,7 +1029,7 @@ impl Bfasm {
                 let found = self.get_slice(index, 3);
                 if let [val @ Type::Char(_), EC, EC] = found {
                     self.array[index + 1] = val.clone();
-                    self.output.push_str("[->+>+<<]>>[-<<+>>]\n");
+                    self.output.code("[->+>+<<]>>[-<<+>>]\n");
                     self.index += 2;
                 } else {
                     return Err(TypeMismatch(
@@ -1029,18 +1061,18 @@ impl Bfasm {
 
             // copy the two signs
             self.output
-                .push_str("[->>>>+>+<<<<<]>>>>>[-<<<<<+>>>>>]<<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<\n");
-            self.output.push_str("[<[->-<]>[-<+>]]<\n");
+                .code("[->>>>+>+<<<<<]>>>>>[-<<<<<+>>>>>]<<<[->>>+>+<<<<]>>>>[-<<<<+>>>>]<\n");
+            self.output.code("[<[->-<]>[-<+>]]<\n");
             // XOR them
             // idk dont look at me. How did i write this beauty? PS it didnt work the first time lol
             // if the signs are different subtract the u32s
             self.output
-                .push_str("[[<[<<[->>->>]>>>>]>[>]<[>]<[->>>>]<<<<]\n");
+                .code("[[<[<<[->>->>]>>>>]>[>]<[>]<[->>>>]<<<<]\n");
             // and if the remaining one and copy the sign over
             self.output
-                .push_str("<[[-<<+>>]<<<[-]>>[-<<+>>]>]<[-]>>]\n");
+                .code("<[[-<<+>>]<<<[-]>>[-<<+>>]>]<[-]>>]\n");
             // add (with nothing if diffe rence in signs) and delete extra sign
-            self.output.push_str("<[-<<+>>]<[-]<<\n");
+            self.output.code("<[-<<+>>]<[-]<<\n");
         } else {
             return Err(TypeMismatch(
                 vec![
@@ -1079,7 +1111,7 @@ impl Bfasm {
 
                 if *val == Type::EmptyCell {
                     *val = Type::Char(char);
-                    self.output.push(',');
+                    self.output.code(",");
                 } else {
                     return Err(TypeMismatch(vec![EEC], vec![val.clone()]));
                 }
@@ -1093,9 +1125,9 @@ impl Bfasm {
                 self.expected_input.push('\0');
 
                 self.output
-                    .push_str(">>,[[>>]>[->>+<<]>>+<<<<<[[->>+<<]<<]>>,]\n");
+                    .code(">>,[[>>]>[->>+<<]>>+<<<<<[[->>+<<]<<]>>,]\n");
 
-                self.output.push_str(">>[[-<<+>>]>>]>[-<<+>>]<\n");
+                self.output.code(">>[[-<<+>>]>>]>[-<<+>>]<\n");
 
                 let end = &self.array[index..];
 
@@ -1145,13 +1177,13 @@ impl Bfasm {
             };
 
             // fill ones
-            self.output.push_str("[-<<<[<]+[>]>>]\n");
+            self.output.code("[-<<<[<]+[>]>>]\n");
             // grab the indexed value and copy it
             self.output
-                .push_str("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
+                .code("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
             // put the value back abd remove the ones
             self.output
-                .push_str("[-<<<<[<]<+>>[>]>>>]<<<<[<]>[>->]>>\n");
+                .code("[-<<<<[<]<+>>[>]>>>]<<<<[<]>[>->]>>\n");
 
             ret
         } else {
@@ -1173,7 +1205,7 @@ impl Bfasm {
                 let char = *val as u8 as char;
                 self.expected_output.push(char);
 
-                self.output.push('.');
+                self.output.code(".");
                 Ok(())
             }
 
@@ -1181,7 +1213,7 @@ impl Bfasm {
                 let char = *val as char;
                 self.expected_output.push(char);
 
-                self.output.push('.');
+                self.output.code(".");
                 Ok(())
             }
 
@@ -1208,7 +1240,7 @@ impl Bfasm {
             self.array.remove(index + 1);
             self.array.remove(index + 1);
 
-            self.output.push_str("[-<<+>>]<[->>+<<]>>+>\n");
+            self.output.code("[-<<+>>]<[->>+<<]>>+>\n");
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::Array, EmptyType::U32, EEC],
@@ -1233,7 +1265,7 @@ impl Bfasm {
             self.array.remove(index - 2);
             self.array.remove(index - 2);
 
-            self.output.push_str("[->+<]>[>>]>+>\n");
+            self.output.code("[->+<]>[>>]>+>\n");
         } else {
             return Err(TypeMismatch(
                 vec![EEC, EmptyType::Char, EmptyType::IString],
@@ -1258,7 +1290,7 @@ impl Bfasm {
             self.array.remove(index + 1);
             self.array.remove(index + 1);
 
-            self.output.push_str("+[-<<+>>]<[->>+<<]>>+>\n");
+            self.output.code("+[-<<+>>]<[->>+<<]>>+>\n");
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::Array, EmptyType::U32, EEC],
@@ -1283,7 +1315,7 @@ impl Bfasm {
             self.array.remove(index - 2);
             self.array.remove(index - 2);
 
-            self.output.push_str("+[->+<]>[>>]>+>\n");
+            self.output.code("+[->+<]>[>>]>+>\n");
         } else {
             return Err(TypeMismatch(
                 vec![EEC, EmptyType::U32, EmptyType::Array],
@@ -1306,11 +1338,11 @@ impl Bfasm {
             *val = array[*val as usize];
 
             // fill the ones
-            self.output.push_str("[->>[>]+[<]<]\n");
+            self.output.code("[->>[>]+[<]<]\n");
             // copy the value
-            self.output.push_str(">>[>]>[-<<[<]<+<+>>>[>]>]<<[<]<<\n");
+            self.output.code(">>[>]>[-<<[<]<+<+>>>[>]>]<<[<]<<\n");
             // put the value back and remove the ones
-            self.output.push_str("[->>>[>]>+<<[<]<<]>>>[->>]<[<<]<-\n");
+            self.output.code("[->>>[>]>+<<[<]<<]>>>[->>]<[<<]<-\n");
         } else {
             return Err(TypeMismatch(
                 vec![EEC, EmptyType::U32, EmptyType::Array],
@@ -1334,13 +1366,13 @@ impl Bfasm {
             *val = array[array.len() - *val as usize - 1];
 
             // fill ones
-            self.output.push_str("d[-<<<[<]+[>]>>]\n");
+            self.output.code("d[-<<<[<]+[>]>>]\n");
             // grab the indexed value and copy it
             self.output
-                .push_str("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
+                .code("<<<[<]<[->>[>]>>+>+<<<<[<]<]>>[>]>>>\n");
             // put the value back abd remove the ones
             self.output
-                .push_str("[-<<<<[<]<+>>[>]>>>]<<<<[<]>[>->]>>-\n");
+                .code("[-<<<<[<]<+>>[>]>>>]<<<<[<]>[>->]>>-\n");
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::Array, EmptyType::U32, EEC],
@@ -1370,13 +1402,13 @@ impl Bfasm {
             self.index = index + 1;
 
             // fill ones and clear value
-            self.output.push_str("d[-<<<[<]+[>]>>]<<<[<]<[-]+>>[>]>>>\n");
+            self.output.code("d[-<<<[<]+[>]>>]<<<[<]<[-]+>>[>]>>>\n");
 
             // set the value
-            self.output.push_str("[-<<<<[<]<+>>[>]>>>]\n");
+            self.output.code("[-<<<<[<]<+>>[>]>>>]\n");
 
             // clear the ones
-            self.output.push_str("<<<<[<]>[>->]>>")
+            self.output.code("<<<<[<]>[>->]>>")
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::Array, EmptyType::U32, EEC],
@@ -1409,7 +1441,7 @@ impl Bfasm {
 
             *target = Type::U32(len as u32);
 
-            self.output.push_str("<[->+>+<<]>>[-<<+>>]\n");
+            self.output.code("<[->+>+<<]>>[-<<+>>]\n");
 
             self.index += 1;
 
@@ -1433,7 +1465,7 @@ impl Bfasm {
         if let [Type::U32(x), Type::U32(y)] = slice {
             *x += *y;
             self.array[index + 1] = EC;
-            self.output.push_str(">[-<+>]<\n");
+            self.output.code(">[-<+>]<\n");
             Ok(())
         } else {
             Err(TypeMismatch(
@@ -1456,7 +1488,7 @@ impl Bfasm {
             // *x = x.checked_sub(*y).ok_or(BfasmError::Underflow)?;
 
             self.array[index + 1] = EC;
-            self.output.push_str(">[-<->]<\n");
+            self.output.code(">[-<->]<\n");
 
             if x < y {
                 self.array[index] = Type::U32(0);
@@ -1489,7 +1521,7 @@ impl Bfasm {
 
         while ending_index != index {
             ending_index -= 1;
-            self.output.push('<');
+            self.output.code("<");
 
             match self.get(ending_index) {
                 Type::U32(_) | Type::Bool(_) | Type::Char(_) => {
@@ -1505,7 +1537,7 @@ impl Bfasm {
             }
         }
 
-        self.output.push('\n');
+        self.output.code("\n");
 
         self.index = index;
 
@@ -1540,7 +1572,7 @@ impl Bfasm {
 
             let mut previous_cond = 0;
 
-            self.output.push_str(">>>>+<<");
+            self.output.code(">>>>+<<");
 
             self.index += 4; // ???
 
@@ -1552,8 +1584,8 @@ impl Bfasm {
             // validate the arms
             for (match_index, (cond, code)) in match_arms.iter().enumerate() {
                 self.output
-                    .push_str(&"+".repeat((*cond - previous_cond) as usize));
-                self.output.push_str("[-<<[->]>]>>[<<<<[>]>>>>[\n");
+                    .code(&"+".repeat((*cond - previous_cond) as usize));
+                self.output.code("[-<<[->]>]>>[<<<<[>]>>>>[\n");
 
                 // after the func, move to the correct location to continue matching
                 let bunf_index = self.index + 1;
@@ -1590,14 +1622,15 @@ impl Bfasm {
 
                     self.output.enabled(output);
                 }
-                self.output.push_str(&str);
-                self.output.push_str("\n]<<<\n");
+                self.output.extend(str);
+
+                self.output.code("\n]<<<\n");
 
                 previous_cond = *cond;
             }
 
-            self.output.push_str(&"]".repeat(match_arms.len()));
-            self.output.push_str(">[<]>[-]<<[-]<<[-]\n");
+            self.output.code(&"]".repeat(match_arms.len()));
+            self.output.code(">[<]>[-]<<[-]<<[-]\n");
 
             self.index = index;
 
@@ -1629,13 +1662,13 @@ impl Bfasm {
         &mut self,
         code: &[BfasmOps],
         ret_index: usize,
-    ) -> Option<String> {
+    ) -> Option<Vec<BFOp>> {
 
         // dbg!(&self.array, "check start");
 
         let mut bfasm = Bfasm {
             array: self.array.clone(),
-            output: BfasmWriter::String(String::new(), true),
+            output: BfasmWriter::BFOps(Vec::new(), true),
             index: self.index,
             expected_input: String::new(),
             expected_output: String::new(),
@@ -1682,8 +1715,9 @@ impl Bfasm {
 
         if EmptyType::from_vec(&self.array) == EmptyType::from_vec(&bfasm.array) {
             // add better formatting
-            let BfasmWriter::String(output, true) = bfasm.output else {unreachable!()};
-            Some(output.replace('\n', "\n  "))
+            let BfasmWriter::BFOps(output, true) = bfasm.output else {unreachable!()};
+            // Some(output.replace('\n', "\n  "))
+            Some(output)
         } else {
             dbg!(&self.array, &bfasm.array, code, "match fail");
             None
@@ -1727,7 +1761,7 @@ impl Bfasm {
                 self.output.enabled(output);
             }
 
-            write!(self.output, "[[-]\n{str}]\n").unwrap();
+            write!(self.output, "[[-]\n{:?}]\n", str).unwrap();
 
             match errs{
                 None => {Ok(())}
@@ -1783,7 +1817,7 @@ impl Bfasm {
             }
 
             self.output.enabled(output);
-            write!(self.output, "[\n{str}]\n").unwrap();
+            write!(self.output, "[\n{:?}]\n", str).unwrap();
             self.array[index] = EC;
 
             match errs {
@@ -1813,7 +1847,7 @@ impl Bfasm {
             self.index = index;
 
             self.output
-                .push_str("+<<[-<<[->]>]>>[<<<<[>+<[-]]>>>]>-<<[-]<[-<+>]<\n")
+                .code("+<<[-<<[->]>]>>[<<<<[>+<[-]]>>>]>-<<[-]<[-<+>]<\n")
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC],
@@ -1838,7 +1872,7 @@ impl Bfasm {
             self.index = index;
 
             self.output
-                .push_str("+<[-<<[->]>]>>[<<+>>>]<-<[-]<<[-]>[-<+>]<\n")
+                .code("+<[-<<[->]>]>>[<<+>>>]<-<[-]<<[-]>[-<+>]<\n")
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC],
@@ -1864,7 +1898,7 @@ impl Bfasm {
 
             //                    +<<[-<<[->]>]>>[<<<<[-]>+>>]>-<<[-]<[-<+>]<?
             self.output
-                .push_str("+<<[-<<[->]>]>>[<<<+<[>-<[-]]>>>]>-<<[-]<[-<+>]<\n");
+                .code("+<<[-<<[->]>]>>[<<<+<[>-<[-]]>>>]>-<<[-]<[-<+>]<\n");
         } else {
             return Err(TypeMismatch(
                 vec![EmptyType::U32, EEC, EmptyType::U32, EEC, EEC],
